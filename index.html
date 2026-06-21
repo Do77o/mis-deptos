@@ -8,6 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans,system-ui,sans-serif);background:var(--bg3);color:var(--tx1);font-size:15px;line-height:1.5}
@@ -321,6 +322,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.database();
+const storage = firebase.storage();
 
 let _saveTimer = null;
 let _dbRef = null;
@@ -454,12 +456,17 @@ function normalizeFromFirebase(val){
 
 function pushToFirebase(){
   setSyncing(true);
-  // strip binary doc data before saving (too large for Realtime DB free tier)
   const slim = {
     ...S,
     deptos: S.deptos.map(d=>({
       ...d,
-      docs: (d.docs||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size}))
+      docs: (d.docs||[]).map(doc=>({
+        name: doc.name,
+        date: doc.date,
+        size: doc.size,
+        url:  doc.url||null,   // Firebase Storage download URL
+        path: doc.path||null,  // Storage path for deletion
+      }))
     }))
   };
   db.ref('state').set(slim)
@@ -1344,15 +1351,16 @@ function renderDeptoModal(d){
     <div class="st">Documentos del inquilino</div>
     ${(d.docs||[]).length===0?'<div class="es"><i class="ti ti-file-off"></i><p>Sin documentos cargados</p></div>':''}
     ${(d.docs||[]).map((doc,i)=>`<div class="doc-item">
-      <i class="ti ti-file-text doc-icon" aria-hidden="true"></i>
+      <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/)?'ti-file-type-doc':'ti-file-text'} doc-icon" aria-hidden="true"></i>
       <div style="flex:1"><div class="doc-name">${doc.name}</div><div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div></div>
-      ${doc.data?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i})"><i class="ti ti-download"></i></button>`:''}
+      ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i})" title="Descargar"><i class="ti ti-download"></i></button>`:''}
       <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i})"><i class="ti ti-trash"></i></button>
     </div>`).join('')}
-    <div style="margin-top:12px">
+    <div id="upload-status-${d.id}" style="margin-bottom:8px"></div>
+    <div style="margin-top:4px">
       <label class="upload-area" for="file-upload-${d.id}">
         <i class="ti ti-upload" style="font-size:22px;display:block;margin-bottom:6px" aria-hidden="true"></i>
-        Hacé clic para subir un archivo (PDF, imagen, Word)
+        Hacé clic para subir un archivo (PDF, Word, imagen)
       </label>
       <input type="file" id="file-upload-${d.id}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx" onchange="uploadDoc('${d.id}',this)">
     </div>`;
@@ -1421,36 +1429,60 @@ function saveDepto(id){
   save();cm();render();updateBadge();
 }
 
-function uploadDoc(id,input){
-  const d=S.deptos.find(x=>x.id===id);
-  if(!d||!input.files[0])return;
-  const file=input.files[0];
-  const size=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
-  const reader=new FileReader();
-  reader.onload=function(e){
-    if(!d.docs)d.docs=[];
-    d.docs.push({name:file.name,date:today(),size,data:e.target.result});
+function uploadDoc(id, input){
+  const d = S.deptos.find(x=>x.id===id);
+  if(!d||!input.files[0]) return;
+  const file = input.files[0];
+  const size = file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
+
+  // Show upload progress in modal
+  const statusEl = document.getElementById('upload-status-'+id);
+  if(statusEl) statusEl.innerHTML = `<span style="color:var(--tx2);font-size:13px"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Subiendo ${file.name}...</span>`;
+
+  // Path in Storage: docs/{deptoId}/{timestamp}_{filename}
+  const path = `docs/${id}/${Date.now()}_${file.name}`;
+  const ref = storage.ref(path);
+
+  ref.put(file).then(snap=>snap.ref.getDownloadURL()).then(url=>{
+    if(!d.docs) d.docs=[];
+    d.docs.push({name:file.name, date:today(), size, url, path});
     save();
     const d2=S.deptos.find(x=>x.id===id);
     renderDeptoModal(d2);
-  };
-  reader.readAsDataURL(file);
+  }).catch(e=>{
+    console.error('Upload error',e);
+    if(statusEl) statusEl.innerHTML=`<span style="color:var(--dan);font-size:13px">Error al subir: ${e.message}</span>`;
+  });
 }
 
-function downloadDoc(id,idx){
-  const d=S.deptos.find(x=>x.id===id);
-  if(!d||!d.docs[idx]||!d.docs[idx].data)return;
-  const a=document.createElement('a');
-  a.href=d.docs[idx].data;
-  a.download=d.docs[idx].name;
-  a.click();
+function downloadDoc(id, idx){
+  const d = S.deptos.find(x=>x.id===id);
+  if(!d||!d.docs[idx]) return;
+  const doc = d.docs[idx];
+  if(doc.url){
+    // Firebase Storage URL — open in new tab (browser handles download)
+    window.open(doc.url, '_blank');
+  } else if(doc.data){
+    // Legacy local data (old docs uploaded before Storage)
+    const a = document.createElement('a');
+    a.href = doc.data;
+    a.download = doc.name;
+    a.click();
+  }
 }
 
-function delDoc(id,idx){
-  const d=S.deptos.find(x=>x.id===id);
-  if(!d)return;
+function delDoc(id, idx){
+  const d = S.deptos.find(x=>x.id===id);
+  if(!d) return;
+  if(!confirm(`¿Eliminar "${d.docs[idx].name}"? Se borrará permanentemente.`)) return;
+  const doc = d.docs[idx];
+  // Delete from Storage if it has a path
+  if(doc.path){
+    storage.ref(doc.path).delete().catch(e=>console.warn('Storage delete error (file may not exist):',e));
+  }
   d.docs.splice(idx,1);
-  save();renderDeptoModal(d);
+  save();
+  renderDeptoModal(d);
 }
 
 function addNota(id){
