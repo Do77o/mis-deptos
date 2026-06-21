@@ -201,8 +201,8 @@ input[type=date]{color-scheme:dark}
     </div>
     <div class="nav active" onclick="sv('dashboard')" id="nav-dashboard"><i class="ti ti-layout-dashboard"></i> Panel</div>
     <div class="nav" onclick="sv('deptos')" id="nav-deptos"><i class="ti ti-home-2"></i> Departamentos</div>
-    <div class="nav" onclick="sv('pagos')" id="nav-pagos"><i class="ti ti-cash"></i> Pagos</div>
     <div class="nav" onclick="sv('servicios')" id="nav-servicios"><i class="ti ti-plug"></i> Servicios</div>
+    <div class="nav" onclick="sv('pagos')" id="nav-pagos"><i class="ti ti-cash"></i> Pagos</div>
     <div class="nav" onclick="sv('mantenimiento')" id="nav-mantenimiento"><i class="ti ti-tool"></i> Mantenimiento</div>
     <div class="nav" onclick="sv('informacion')" id="nav-informacion"><i class="ti ti-info-circle"></i> Información</div>
     <div class="nav" onclick="sv('agenda')" id="nav-agenda"><i class="ti ti-calendar-event"></i> Agenda</div>
@@ -1250,6 +1250,14 @@ function renderDeptoModal(d){
 
   if(t==='info'){
     body+=`
+    <div class="st">Identificación</div>
+    <div class="fg2">
+      <div class="fi"><label class="fl2">Edificio / Zona</label><input id="f-group" value="${d.group}" list="group-list" placeholder="Ej: Vilela">
+        <datalist id="group-list">${[...new Set(S.deptos.map(x=>x.group))].sort().map(g=>`<option value="${g}">`).join('')}</datalist>
+      </div>
+      <div class="fi"><label class="fl2">Identificador</label><input id="f-label" value="${d.label}" placeholder="Ej: 2A, 1C, PH..."></div>
+    </div>
+    <div class="st">Inquilino</div>
     <div class="fg2">
       <div class="fi"><label class="fl2">Inquilino</label><input id="f-tenant" value="${d.tenant}" placeholder="Nombre y apellido"></div>
       <div class="fi"><label class="fl2">DNI</label><input id="f-dni" value="${d.dni||''}" placeholder="12.345.678"></div>
@@ -1444,6 +1452,10 @@ function saveDepto(id){
   if(!d)return;
   const t=window._deptoTab||'info';
   if(t==='info'){
+    const newGroup=document.getElementById('f-group').value.trim();
+    const newLabel=document.getElementById('f-label').value.trim();
+    if(newGroup) d.group=newGroup;
+    if(newLabel) d.label=newLabel;
     d.tenant=document.getElementById('f-tenant').value.trim();
     d.dni=document.getElementById('f-dni').value.trim();
     d.phone=document.getElementById('f-phone').value.trim();
