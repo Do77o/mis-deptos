@@ -856,28 +856,21 @@ function rPagosUnificado(){
           <div style="font-size:12px;color:var(--tx2);margin-top:2px">Vence día ${d.paymentDay} · ${d.phone||'sin tel.'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn btn-s btn-w" onclick="openAjustarAlquiler('${d.id}')"><i class="ti ti-trending-up"></i> Ajustar</button>
-          ${esperadoDepto>0?`<span class="gs-total ${estadoClass}">$ ${totalDepto.toLocaleString('es-AR')} / $ ${esperadoDepto.toLocaleString('es-AR')}</span>`:''}
+          ${baseAmt?`<button class="btn btn-s btn-w" onclick="openAjustarAlquiler('${d.id}')"><i class="ti ti-trending-up"></i> Ajustar</button>`:''}
+          ${esperadoDepto>0?`<span id="total-${d.id}" class="gs-total ${estadoClass}">$ ${totalDepto.toLocaleString('es-AR')} / $ ${esperadoDepto.toLocaleString('es-AR')}</span>`:''}
           <i class="ti ti-chevron-down" id="chev-${d.id}" style="color:var(--tx2);transition:transform .2s;cursor:pointer" onclick="togglePagoRow('${d.id}')"></i>
         </div>
       </div>
       <div id="pagorow-${d.id}" style="display:none">
         <!-- ALQUILER -->
-        <div style="padding:10px 16px;border-bottom:0.5px solid var(--bdr)">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div>
-              <div style="font-size:13px;font-weight:500">🏠 Alquiler${cochAmt?` + cochera`:''}</div>
-              <div style="font-size:12px;color:var(--tx2)">${baseAmt?`${cur} ${baseAmt.toLocaleString('es-AR')}${cochAmt?' + cochera $'+cochAmt.toLocaleString('es-AR'):''}`:' Sin monto cargado'}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="badge ${p==='yes'?'bp':p==='partial'?'bpa':'bu'}">${p==='yes'?'Pagó':p==='partial'?'Parcial':'Sin pago'}</span>
-              <select style="font-size:12px;padding:5px 8px;border-radius:var(--rs);border:0.5px solid var(--bdr);background:var(--bg2);color:var(--tx1)" onchange="setPago('${d.id}','${tk}',this.value)">
-                <option value="no" ${p==='no'?'selected':''}>Sin pago</option>
-                <option value="partial" ${p==='partial'?'selected':''}>Parcial</option>
-                <option value="yes" ${p==='yes'?'selected':''}>Pagó</option>
-              </select>
-            </div>
+        <div style="padding:8px 16px;border-bottom:0.5px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-size:13px;font-weight:500">🏠 Alquiler${cochAmt?` + cochera`:''}</div>
+            <div style="font-size:12px;color:var(--tx2)">${baseAmt?`${cur} ${baseAmt.toLocaleString('es-AR')}${cochAmt?' + cochera $'+cochAmt.toLocaleString('es-AR'):''}`:' Sin monto cargado'}</div>
           </div>
+          <button class="gs-toggle ${p==='yes'?'pagado':''}" onclick="toggleAlquilerPago('${d.id}','${tk}')">
+            <i class="ti ${p==='yes'?'ti-check':'ti-clock'}"></i> ${p==='yes'?'Cobrado':'Pendiente'}
+          </button>
         </div>
         <!-- SERVICIOS -->
         ${svcsActivos.length===0?`<div style="padding:10px 16px;font-size:13px;color:var(--tx2)">Sin servicios activos</div>`:
@@ -914,6 +907,138 @@ function togglePagoRow(id){
 function setPM(k){window._pm=k;render();}
 function setPago(id,k,v){const d=S.deptos.find(x=>x.id===id);if(d){d.payments[k]=v;save();render();updateBadge();}}
 
+// ======= AJUSTAR ALQUILER =======
+async function openAjustarAlquiler(id){
+  const d=S.deptos.find(x=>x.id===id);
+  if(!d)return;
+  const c=d.contract||{};
+  const base=Number(c.amount||0);
+  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const cur=c.currency==='usd'?'USD':'$';
+
+  document.getElementById('mtitle').textContent=`Ajustar alquiler — ${d.group} ${d.label}`;
+  document.getElementById('mbody').innerHTML=`
+    <div style="background:var(--bg1);border-radius:var(--rs);padding:12px 14px;margin-bottom:16px;font-size:13px">
+      <div style="color:var(--tx2);margin-bottom:4px">Monto actual</div>
+      <div style="font-size:18px;font-weight:500">${cur} ${base.toLocaleString('es-AR')}${coch?` <span style="font-size:13px;color:var(--tx2)">+ cochera $ ${coch.toLocaleString('es-AR')}</span>`:''}</div>
+    </div>
+    <div class="ipc-loader" id="ipc-status"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Consultando IPC del INDEC...</div>
+    <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+    <div id="ipc-result"></div>
+    <hr style="border:none;border-top:0.5px solid var(--bdr);margin:16px 0">
+    <div class="st">Ajuste manual</div>
+    <div class="fg2" style="margin-bottom:12px">
+      <div class="fi">
+        <label class="fl2">Por porcentaje (%)</label>
+        <input type="number" id="aj-pct" placeholder="Ej: 8.4" step="0.1" min="0" oninput="calcAjuste('${id}')">
+      </div>
+      <div class="fi">
+        <label class="fl2">O nuevo monto directo (${cur})</label>
+        <input type="number" id="aj-monto" placeholder="${base}" min="0" oninput="calcAjusteDirecto('${id}')">
+      </div>
+    </div>
+    ${coch?`<div class="fi"><label class="fl2">Nuevo monto cochera ($)</label><input type="number" id="aj-coch" placeholder="${coch}" min="0"></div>`:''}
+    <div id="aj-preview" style="min-height:40px"></div>
+    <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:8px" onclick="aplicarAjuste('${id}')">
+      <i class="ti ti-check"></i> Aplicar ajuste
+    </button>`;
+  document.getElementById('mft').innerHTML=`<button class="btn" onclick="cm()">Cerrar</button>`;
+  document.getElementById('modal').style.display='flex';
+
+  const ipc=await fetchIPC();
+  const statusEl=document.getElementById('ipc-status');
+  const resultEl=document.getElementById('ipc-result');
+  if(!statusEl)return;
+  if(!ipc){
+    statusEl.innerHTML=`<span style="color:var(--tx2);font-size:13px"><i class="ti ti-wifi-off"></i> No se pudo obtener el IPC automático.</span>`;
+    return;
+  }
+  const pct=parseFloat(ipc.pct);
+  const nuevoBase=Math.round(base*(1+pct/100));
+  const nuevoCoch=coch?Math.round(coch*(1+pct/100)):0;
+  statusEl.innerHTML='';
+  resultEl.innerHTML=`
+    <div class="ipc-box">
+      <div style="font-size:12px;color:var(--suc)">IPC NACIONAL — ${ipc.date}</div>
+      <div class="ipc-val">+${ipc.pct}%</div>
+      <div class="ipc-sub">Fuente: INDEC · apis.datos.gob.ar</div>
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px">${cur} ${base.toLocaleString('es-AR')} → <strong>${cur} ${nuevoBase.toLocaleString('es-AR')}</strong>${coch?' · cochera $'+coch.toLocaleString('es-AR')+' → <strong>$'+nuevoCoch.toLocaleString('es-AR')+'</strong>':''}</div>
+        <button class="btn btn-p btn-s" onclick="presetAjuste('${id}',${pct},${nuevoBase},${nuevoCoch})"><i class="ti ti-bolt"></i> Usar IPC</button>
+      </div>
+    </div>`;
+}
+
+function presetAjuste(id,pct,nuevoBase,nuevoCoch){
+  const pctEl=document.getElementById('aj-pct');
+  const montoEl=document.getElementById('aj-monto');
+  const cochEl=document.getElementById('aj-coch');
+  if(pctEl) pctEl.value=pct;
+  if(montoEl) montoEl.value=nuevoBase;
+  if(cochEl) cochEl.value=nuevoCoch||'';
+  const d=S.deptos.find(x=>x.id===id);
+  if(d) showAjPreview(d,nuevoBase,nuevoCoch);
+}
+
+function calcAjuste(id){
+  const d=S.deptos.find(x=>x.id===id);
+  if(!d)return;
+  const base=Number(d.contract?.amount||0);
+  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const pct=parseFloat(document.getElementById('aj-pct')?.value||0);
+  if(!pct||isNaN(pct))return;
+  const nuevoBase=Math.round(base*(1+pct/100));
+  const nuevoCoch=coch?Math.round(coch*(1+pct/100)):0;
+  const montoEl=document.getElementById('aj-monto');
+  const cochEl=document.getElementById('aj-coch');
+  if(montoEl) montoEl.value=nuevoBase;
+  if(cochEl&&nuevoCoch) cochEl.value=nuevoCoch;
+  showAjPreview(d,nuevoBase,nuevoCoch);
+}
+
+function calcAjusteDirecto(id){
+  const d=S.deptos.find(x=>x.id===id);
+  if(!d)return;
+  const base=Number(d.contract?.amount||0);
+  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const nuevo=Number(document.getElementById('aj-monto')?.value||0);
+  if(!nuevo)return;
+  const nuevoCoch=Number(document.getElementById('aj-coch')?.value||coch);
+  if(base>0){
+    const pct=((nuevo-base)/base*100).toFixed(2);
+    const pctEl=document.getElementById('aj-pct');
+    if(pctEl) pctEl.value=pct;
+  }
+  showAjPreview(d,nuevo,nuevoCoch);
+}
+
+function showAjPreview(d,nuevoBase,nuevoCoch){
+  const cur=d.contract?.currency==='usd'?'USD':'$';
+  const base=Number(d.contract?.amount||0);
+  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const diff=nuevoBase-base;
+  const prev=document.getElementById('aj-preview');
+  if(!prev)return;
+  prev.innerHTML=`<div style="background:rgba(74,158,224,0.1);border:0.5px solid rgba(74,158,224,.2);border-radius:var(--rs);padding:10px 12px;font-size:13px;margin-top:4px">
+    <strong>Resultado:</strong> ${cur} ${base.toLocaleString('es-AR')} → ${cur} ${nuevoBase.toLocaleString('es-AR')}
+    <span style="color:${diff>=0?'var(--suc)':'var(--dan)'};margin-left:6px">${diff>=0?'+':''}${diff.toLocaleString('es-AR')}</span>
+    ${nuevoCoch&&nuevoCoch!==coch?`<br>Cochera: $ ${coch.toLocaleString('es-AR')} → $ ${nuevoCoch.toLocaleString('es-AR')}`:''}
+  </div>`;
+}
+
+function aplicarAjuste(id){
+  const d=S.deptos.find(x=>x.id===id);
+  if(!d)return;
+  const nuevoBase=Number(document.getElementById('aj-monto')?.value||0);
+  if(!nuevoBase){alert('Ingresá el nuevo monto.');return;}
+  const cochEl=document.getElementById('aj-coch');
+  const nuevoCoch=cochEl?Number(cochEl.value||d.cochera?.precio||0):undefined;
+  d.contract.amount=nuevoBase;
+  d.contract.lastUpdate=today();
+  if(d.cochera?.tiene&&nuevoCoch) d.cochera.precio=nuevoCoch;
+  save();cm();render();updateBadge();
+}
+
 // ======= GASTOS DE SERVICIOS =======
 function tk2label(tk){
   const [y,m]=tk.split('-');
@@ -926,7 +1051,51 @@ function guardarSvcCosto(deptoId, tk, svcKey, monto, pagado){
 function toggleSvcPago(deptoId, tk, svcKey){
   const reg=getSvcMes(deptoId, tk, svcKey);
   setSvcMes(deptoId, tk, svcKey, reg.monto, !reg.pagado);
-  save(); render();
+  save();
+  // Update button in place without re-rendering the whole page
+  const btn=document.querySelector(`[onclick="toggleSvcPago('${deptoId}','${tk}','${svcKey}')"]`);
+  if(btn){
+    const pagado=!reg.pagado;
+    btn.className=`gs-toggle ${pagado?'pagado':''}`;
+    btn.innerHTML=`<i class="ti ${pagado?'ti-check':'ti-clock'}"></i> ${pagado?'Cobrado':'Pendiente'}`;
+  }
+  updatePagoRowTotal(deptoId, tk);
+}
+
+function toggleAlquilerPago(deptoId, tk){
+  const d=S.deptos.find(x=>x.id===deptoId);
+  if(!d)return;
+  const cur=d.payments[tk]||'no';
+  const next=cur==='yes'?'no':'yes';
+  d.payments[tk]=next;
+  save();
+  updateBadge();
+  // Update button in place
+  const btn=document.querySelector(`[onclick="toggleAlquilerPago('${deptoId}','${tk}')"]`);
+  if(btn){
+    btn.className=`gs-toggle ${next==='yes'?'pagado':''}`;
+    btn.innerHTML=`<i class="ti ${next==='yes'?'ti-check':'ti-clock'}"></i> ${next==='yes'?'Cobrado':'Pendiente'}`;
+  }
+  updatePagoRowTotal(deptoId, tk);
+}
+
+function updatePagoRowTotal(deptoId, tk){
+  // Update the header total without collapsing
+  const d=S.deptos.find(x=>x.id===deptoId);
+  if(!d)return;
+  const p=d.payments[tk]||'no';
+  const baseAmt=Number(d.contract?.amount||0);
+  const cochAmt=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const totalSvc=totalSvcMes(deptoId,tk);
+  const cobSvc=totalSvcMesPagado(deptoId,tk);
+  const totalDepto=(p==='yes'?(baseAmt+cochAmt):0)+cobSvc;
+  const esperadoDepto=(baseAmt+cochAmt)+totalSvc;
+  const estadoClass=esperadoDepto===0?'':totalDepto>=esperadoDepto?'pagado':totalDepto>0?'parcial':'debe';
+  const totalEl=document.getElementById('total-'+deptoId);
+  if(totalEl){
+    totalEl.className=`gs-total ${estadoClass}`;
+    totalEl.textContent=`$ ${totalDepto.toLocaleString('es-AR')} / $ ${esperadoDepto.toLocaleString('es-AR')}`;
+  }
 }
 function openHistorialSvc(deptoId){
   const d=S.deptos.find(x=>x.id===deptoId);
