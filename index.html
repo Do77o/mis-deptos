@@ -433,6 +433,8 @@ function normalizeFromFirebase(val){
     return {
       ...d,
       docs:   toArr(d.docs),
+      docsServicios: toArr(d.docsServicios),
+      docsMantenimiento: toArr(d.docsMantenimiento),
       notas:  toArr(d.notas),
       payments: d.payments||{},
       services: d.services||{},
@@ -460,13 +462,9 @@ function pushToFirebase(){
     ...S,
     deptos: S.deptos.map(d=>({
       ...d,
-      docs: (d.docs||[]).map(doc=>({
-        name: doc.name,
-        date: doc.date,
-        size: doc.size,
-        url:  doc.url||null,   // Firebase Storage download URL
-        path: doc.path||null,  // Storage path for deletion
-      }))
+      docs: (d.docs||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
+      docsServicios: (d.docsServicios||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
+      docsMantenimiento: (d.docsMantenimiento||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
     }))
   };
   db.ref('state').set(slim)
@@ -517,8 +515,10 @@ function migrateState(){
     }
     // cochera
     if(!d.cochera) d.cochera={tiene:false,numero:'',precio:''};
-    // docs array
+    // docs arrays
     if(!d.docs) d.docs=[];
+    if(!d.docsServicios) d.docsServicios=[];
+    if(!d.docsMantenimiento) d.docsMantenimiento=[];
     if(!d.notas) d.notas=[];
     // ensure all service keys exist
     getAllSvcs().forEach(s=>{
@@ -549,6 +549,8 @@ function makeDepto(id, label, group){
     contract:{type:'largo',currency:'ars',amount:'',startDate:'',durationMonths:24,lastUpdate:'',notes:''},
     cochera:{tiene:false,numero:'',precio:''},
     docs:[],
+    docsServicios:[],
+    docsMantenimiento:[],
     notas:[],
   };
 }
@@ -1243,8 +1245,8 @@ function renderDeptoModal(d){
   const tk=todayKey();
   const p=d.payments[tk]||'no';
   document.getElementById('mtitle').textContent=`${d.group} ${d.label}${d.label.includes('úplex')?'':''}`;
-  const tabs=['info','contrato','servicios','svc-mes','docs','notas'];
-  const tabLabels=['Inquilino','Contrato','Servicios','Gastos','Documentos','Notas'];
+  const tabs=['info','contrato','servicios','svc-mes','docs-inquilino','docs-servicios','docs-mant','notas'];
+  const tabLabels=['Inquilino','Contrato','Servicios','Gastos','Docs Inquilino','Docs Servicios','Docs Mant.','Notas'];
   let body=`<div class="tb">${tabs.map((x,i)=>`<div class="tab ${t===x?'active':''}" onclick="switchDeptoTab('${x}')">${tabLabels[i]}</div>`).join('')}</div>`;
 
   if(t==='info'){
@@ -1346,24 +1348,35 @@ function renderDeptoModal(d){
         <button class="btn btn-s" onclick="openHistorialSvc('${d.id}')"><i class="ti ti-history"></i> Ver historial completo</button>
       </div>`;
     }
-  } else if(t==='docs'){
+  } else if(t==='docs-inquilino'||t==='docs-servicios'||t==='docs-mant'){
+    const docKey = t==='docs-inquilino'?'docs':t==='docs-servicios'?'docsServicios':'docsMantenimiento';
+    const docLabel = t==='docs-inquilino'?'del inquilino (DNI, contrato, garantía...)':t==='docs-servicios'?'de servicios (facturas de luz, gas, internet...)':'de mantenimiento (presupuestos, facturas de proveedores...)';
+    const docIcon = t==='docs-inquilino'?'ti-user':t==='docs-servicios'?'ti-receipt':'ti-tool';
+    const docs = d[docKey]||[];
+    const uploadId = `fu-${t}-${d.id}`;
+    const statusId = `us-${t}-${d.id}`;
     body+=`
-    <div class="st">Documentos del inquilino</div>
-    ${(d.docs||[]).length===0?'<div class="es"><i class="ti ti-file-off"></i><p>Sin documentos cargados</p></div>':''}
-    ${(d.docs||[]).map((doc,i)=>`<div class="doc-item">
-      <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/)?'ti-file-type-doc':'ti-file-text'} doc-icon" aria-hidden="true"></i>
-      <div style="flex:1"><div class="doc-name">${doc.name}</div><div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div></div>
-      ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i})" title="Descargar"><i class="ti ti-download"></i></button>`:''}
-      <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i})"><i class="ti ti-trash"></i></button>
-    </div>`).join('')}
-    <div id="upload-status-${d.id}" style="margin-bottom:8px"></div>
-    <div style="margin-top:4px">
-      <label class="upload-area" for="file-upload-${d.id}">
-        <i class="ti ti-upload" style="font-size:22px;display:block;margin-bottom:6px" aria-hidden="true"></i>
-        Hacé clic para subir un archivo (PDF, Word, imagen)
-      </label>
-      <input type="file" id="file-upload-${d.id}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx" onchange="uploadDoc('${d.id}',this)">
-    </div>`;
+    <div class="st"><i class="ti ${docIcon}"></i> Documentos ${docLabel}</div>
+    ${docs.length===0?`<div class="es" style="padding:16px 0"><i class="ti ti-file-off"></i><p>Sin documentos</p></div>`:''}
+    ${docs.map((doc,i)=>`
+      <div class="doc-item">
+        <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
+        <div style="flex:1;min-width:0">
+          <div class="doc-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.name}</div>
+          <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'${docKey}')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
+          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'${docKey}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`).join('')}
+    <div id="${statusId}" style="margin:8px 0;min-height:20px"></div>
+    <label class="upload-area" for="${uploadId}" style="display:block;margin-top:4px">
+      <i class="ti ti-upload" style="font-size:22px;display:block;margin-bottom:6px"></i>
+      Subir archivo (PDF, Word, imagen)
+    </label>
+    <input type="file" id="${uploadId}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx"
+      onchange="uploadDoc('${d.id}',this,'${docKey}','${statusId}')">`;
   } else if(t==='notas'){
     body+=`
     <div class="st">Notas del inquilino</div>
@@ -1374,7 +1387,7 @@ function renderDeptoModal(d){
     ${(d.notas||[]).length===0?`<div class="es"><i class="ti ti-notes"></i><p>Sin notas</p></div>`:(d.notas||[]).slice().reverse().map((n,ri)=>{const i=(d.notas.length-1-ri);return`<div class="nota-item"><div class="nota-text">${n.text}</div><div style="display:flex;justify-content:space-between;align-items:center"><div class="nota-date">${n.date}</div><button class="btn btn-s" onclick="delNota('${d.id}',${i})"><i class="ti ti-trash"></i></button></div></div>`}).join('')}`;
   }
   document.getElementById('mbody').innerHTML=body;
-  const saveBtn=t==='docs'||t==='notas'||t==='svc-mes'?'':
+  const saveBtn=['docs-inquilino','docs-servicios','docs-mant','notas','svc-mes'].includes(t)?'':
     `<button class="btn btn-p" onclick="saveDepto('${d.id}')">Guardar</button>`;
   document.getElementById('mft').innerHTML=`<button class="btn btn-d btn-s" onclick="deleteDepto('${d.id}')" style="margin-right:auto"><i class="ti ti-trash"></i></button><button class="btn" onclick="cm()">Cerrar</button>${saveBtn}`;
 }
@@ -1429,23 +1442,22 @@ function saveDepto(id){
   save();cm();render();updateBadge();
 }
 
-function uploadDoc(id, input){
+function uploadDoc(id, input, docKey, statusId){
+  docKey = docKey || 'docs';
   const d = S.deptos.find(x=>x.id===id);
   if(!d||!input.files[0]) return;
   const file = input.files[0];
   const size = file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
 
-  // Show upload progress in modal
-  const statusEl = document.getElementById('upload-status-'+id);
+  const statusEl = statusId ? document.getElementById(statusId) : null;
   if(statusEl) statusEl.innerHTML = `<span style="color:var(--tx2);font-size:13px"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Subiendo ${file.name}...</span>`;
 
-  // Path in Storage: docs/{deptoId}/{timestamp}_{filename}
-  const path = `docs/${id}/${Date.now()}_${file.name}`;
+  const path = `docs/${id}/${docKey}/${Date.now()}_${file.name}`;
   const ref = storage.ref(path);
 
   ref.put(file).then(snap=>snap.ref.getDownloadURL()).then(url=>{
-    if(!d.docs) d.docs=[];
-    d.docs.push({name:file.name, date:today(), size, url, path});
+    if(!d[docKey]) d[docKey]=[];
+    d[docKey].push({name:file.name, date:today(), size, url, path});
     save();
     const d2=S.deptos.find(x=>x.id===id);
     renderDeptoModal(d2);
@@ -1455,15 +1467,14 @@ function uploadDoc(id, input){
   });
 }
 
-function downloadDoc(id, idx){
+function downloadDoc(id, idx, docKey){
+  docKey = docKey || 'docs';
   const d = S.deptos.find(x=>x.id===id);
-  if(!d||!d.docs[idx]) return;
-  const doc = d.docs[idx];
+  if(!d||!d[docKey]||!d[docKey][idx]) return;
+  const doc = d[docKey][idx];
   if(doc.url){
-    // Firebase Storage URL — open in new tab (browser handles download)
     window.open(doc.url, '_blank');
   } else if(doc.data){
-    // Legacy local data (old docs uploaded before Storage)
     const a = document.createElement('a');
     a.href = doc.data;
     a.download = doc.name;
@@ -1471,16 +1482,16 @@ function downloadDoc(id, idx){
   }
 }
 
-function delDoc(id, idx){
+function delDoc(id, idx, docKey){
+  docKey = docKey || 'docs';
   const d = S.deptos.find(x=>x.id===id);
   if(!d) return;
-  if(!confirm(`¿Eliminar "${d.docs[idx].name}"? Se borrará permanentemente.`)) return;
-  const doc = d.docs[idx];
-  // Delete from Storage if it has a path
+  if(!confirm(`¿Eliminar "${d[docKey][idx].name}"? Se borrará permanentemente.`)) return;
+  const doc = d[docKey][idx];
   if(doc.path){
-    storage.ref(doc.path).delete().catch(e=>console.warn('Storage delete error (file may not exist):',e));
+    storage.ref(doc.path).delete().catch(e=>console.warn('Storage delete error:',e));
   }
-  d.docs.splice(idx,1);
+  d[docKey].splice(idx,1);
   save();
   renderDeptoModal(d);
 }
