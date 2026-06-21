@@ -850,14 +850,15 @@ function rPagosUnificado(){
     const estadoClass=esperadoDepto===0?'':totalDepto>=esperadoDepto?'pagado':totalDepto>0?'parcial':'debe';
 
     return`<div class="card" style="margin-bottom:10px">
-      <div class="ch" style="cursor:pointer" onclick="togglePagoRow('${d.id}')">
-        <div>
+      <div class="ch">
+        <div style="cursor:pointer;flex:1" onclick="togglePagoRow('${d.id}')">
           <div style="font-size:14px;font-weight:500">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>
           <div style="font-size:12px;color:var(--tx2);margin-top:2px">Vence día ${d.paymentDay} · ${d.phone||'sin tel.'}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-s btn-w" onclick="openAjustarAlquiler('${d.id}')"><i class="ti ti-trending-up"></i> Ajustar</button>
           ${esperadoDepto>0?`<span class="gs-total ${estadoClass}">$ ${totalDepto.toLocaleString('es-AR')} / $ ${esperadoDepto.toLocaleString('es-AR')}</span>`:''}
-          <i class="ti ti-chevron-down" id="chev-${d.id}" style="color:var(--tx2);transition:transform .2s"></i>
+          <i class="ti ti-chevron-down" id="chev-${d.id}" style="color:var(--tx2);transition:transform .2s;cursor:pointer" onclick="togglePagoRow('${d.id}')"></i>
         </div>
       </div>
       <div id="pagorow-${d.id}" style="display:none">
@@ -875,7 +876,6 @@ function rPagosUnificado(){
                 <option value="partial" ${p==='partial'?'selected':''}>Parcial</option>
                 <option value="yes" ${p==='yes'?'selected':''}>Pagó</option>
               </select>
-              ${baseAmt?`<button class="btn btn-s btn-w" onclick="openAjustarAlquiler('${d.id}')"><i class="ti ti-trending-up"></i> Ajustar</button>`:''}
             </div>
           </div>
         </div>
