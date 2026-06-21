@@ -548,6 +548,7 @@ function migrateState(){
     }
     // cochera
     if(!d.cochera) d.cochera={tiene:false,numero:'',precio:''};
+    if(!d.promos) d.promos={};
     // docs arrays
     if(!d.docs) d.docs=[];
     if(!d.docsServicios) d.docsServicios=[];
@@ -578,6 +579,7 @@ function makeDepto(id, label, group){
     occupancy:'empty', // 'empty' | 'occupied' | 'na'
     services: svc,
     accounts: acc,
+    promos: {}, // {svcKey: {desc, vencimiento}} — promos activas por servicio
     paymentDay:10,
     payments:{},
     contract:{type:'largo',currency:'ars',amount:'',startDate:'',durationMonths:24,lastUpdate:'',notes:''},
@@ -666,6 +668,14 @@ function getAlerts(){
       const lu=new Date(d.contract.lastUpdate);
       const mDiff=(now.getFullYear()-lu.getFullYear())*12+(now.getMonth()-lu.getMonth());
       if(mDiff>=3) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Actualización IPC pendiente`,desc:`${d.tenant} · Última actualización: ${fDate(d.contract.lastUpdate)}`});
+    }
+    // Promo internet por vencer
+    const promoInt=d.promos?.internet;
+    if(promoInt?.vencimiento&&d.services['internet']){
+      const venc=new Date(promoInt.vencimiento+'T00:00:00');
+      const diff=Math.round((venc-now)/86400000);
+      if(diff<0) al.push({type:'ah',icon:'ti-tag',title:`${dname} – Promo internet vencida`,desc:`${d.tenant}${promoInt.desc?' · '+promoInt.desc:''} · Venció el ${fDate(promoInt.vencimiento)}`});
+      else if(diff<=15) al.push({type:'am2',icon:'ti-tag',title:`${dname} – Promo internet vence en ${diff} día${diff===1?'':'s'}`,desc:`${d.tenant}${promoInt.desc?' · '+promoInt.desc:''} · Vence el ${fDate(promoInt.vencimiento)}`});
     }
   });
   S.agenda.forEach(ev=>{
@@ -1181,14 +1191,27 @@ function rServicios(){
 function rSvcCard(s){
   const deptos=S.deptos.filter(d=>d.services[s.key]);
   const isCustom=!BUILTIN_SVCS.find(b=>b.key===s.key);
+  const promoCount=s.key==='internet'?deptos.filter(d=>d.promos?.internet?.vencimiento).length:0;
   return`<div class="card">
     <div class="ch"><h3><i class="ti ${s.icon||'ti-plug'}" aria-hidden="true"></i> ${s.label}</h3>
       <div style="display:flex;align-items:center;gap:8px">
+        ${promoCount?`<span class="badge b-usd"><i class="ti ti-tag"></i> ${promoCount} promo${promoCount>1?'s':''}</span>`:''}
         <span style="font-size:12px;color:var(--tx2)">${deptos.length} deptos</span>
         ${isCustom?`<button class="btn btn-s" onclick="deleteSvc('${s.key}')" title="Eliminar servicio" style="padding:3px 7px"><i class="ti ti-trash" style="font-size:13px"></i></button>`:''}
       </div>
     </div>
-    ${deptos.length===0?`<div class="es"><i class="ti ti-plug-x"></i><p>Ningún depto</p></div>`:deptos.map(d=>`<div class="sr"><div class="si"><div class="dot-g" style="background:${svcColor(s.key)}"></div><div><div class="sn">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>${d.accounts[s.key]?`<div class="sa">Cuenta: ${d.accounts[s.key]}</div>`:''}</div></div><button class="btn btn-s" onclick="openDepto('${d.id}','servicios')"><i class="ti ti-edit"></i></button></div>`).join('')}
+    ${deptos.length===0?`<div class="es"><i class="ti ti-plug-x"></i><p>Ningún depto</p></div>`:deptos.map(d=>{
+      const promo=s.key==='internet'?d.promos?.internet:null;
+      const tienePromo=promo?.vencimiento;
+      const venc=tienePromo?new Date(promo.vencimiento+'T00:00:00'):null;
+      const diff=venc?Math.round((venc-new Date())/86400000):null;
+      const promoColor=diff===null?'':diff<0?'var(--dan)':diff<=15?'var(--war)':'var(--suc)';
+      return`<div class="sr"><div class="si"><div class="dot-g" style="background:${svcColor(s.key)}"></div><div>
+        <div class="sn">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>
+        ${d.accounts[s.key]?`<div class="sa">Cuenta: ${d.accounts[s.key]}</div>`:''}
+        ${tienePromo?`<div class="sa" style="color:${promoColor}"><i class="ti ti-tag"></i> ${promo.desc||'Promo'} · vence ${fDate(promo.vencimiento)}${diff!==null?' ('+( diff<0?'vencida':diff===0?'hoy':diff+' días')+')'  :''}</div>`:''}
+      </div></div><button class="btn btn-s" onclick="openDepto('${d.id}','servicios')"><i class="ti ti-edit"></i></button></div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -1378,6 +1401,15 @@ function renderDeptoModal(d){
     <div class="st">Datos de cuenta / referencia</div>
     ${svcs.filter(s=>!(s.key==='expensas'&&isVilela)).map(s=>`<div class="fi"><label class="fl2">${s.label}${s.key==='expensas'?' — CBU':''}</label><input id="f-acc-${s.key}" value="${d.accounts[s.key]||''}" placeholder="${placeholders[s.key]||'Número o usuario'}"></div>`).join('')}
     ${isVilela?`<input type="hidden" id="f-acc-expensas" value="">`:''}
+    ${d.services['internet']?`
+    <div class="st" style="margin-top:20px"><i class="ti ti-tag"></i> Promoción Internet</div>
+    <p style="font-size:12px;color:var(--tx2);margin-bottom:10px">Registrá la promo activa de internet. Te alertará cuando esté por vencer.</p>
+    <div style="background:var(--bg1);border-radius:var(--rs);padding:10px 12px;border:0.5px solid var(--bdr)">
+      <div class="fg2">
+        <div class="fi"><label class="fl2">Descripción</label><input id="f-promo-desc-internet" value="${d.promos?.internet?.desc||''}" placeholder="Ej: 50% off por 6 meses"></div>
+        <div class="fi"><label class="fl2">Vence el</label><input type="date" id="f-promo-venc-internet" value="${d.promos?.internet?.vencimiento||''}"></div>
+      </div>
+    </div>`:''}
     `;
   } else if(t==='svc-mes'){
     const svcsActivos=getAllSvcs().filter(s=>d.services[s.key]&&!(s.key==='expensas'&&d.group==='Vilela'));
@@ -1543,6 +1575,16 @@ function saveDepto(id){
       const ac=document.getElementById('f-acc-'+s.key);
       if(cb) d.services[s.key]=cb.checked;
       if(ac) d.accounts[s.key]=ac.value.trim();
+      // save promo if fields exist
+      const descEl=document.getElementById('f-promo-desc-'+s.key);
+      const vencEl=document.getElementById('f-promo-venc-'+s.key);
+      if(s.key==='internet'&&(descEl||vencEl)){
+        if(!d.promos) d.promos={};
+        d.promos['internet']={
+          desc: descEl?descEl.value.trim():'',
+          vencimiento: vencEl?vencEl.value:'',
+        };
+      }
     });
   }
   save();cm();render();updateBadge();
