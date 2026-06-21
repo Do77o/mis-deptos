@@ -1476,6 +1476,7 @@ function renderDeptoModal(d){
     </label>
     <input type="file" id="foto-upload-${d.id}" style="display:none" accept="image/*" multiple
       onchange="uploadFotos('${d.id}',this)">`;
+  } else if(t==='notas'){
     body+=`
     <div class="st">Notas del inquilino</div>
     <div class="fg2" style="margin-bottom:12px">
