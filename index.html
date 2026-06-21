@@ -69,7 +69,7 @@ body{font-family:var(--font-sans,system-ui,sans-serif);background:var(--bg3);col
 .mb{background:var(--bg2);border-radius:var(--r);width:100%;max-width:680px;max-height:92vh;overflow-y:auto}
 .mh{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--bdr);position:sticky;top:0;background:var(--bg2);z-index:1}
 .mh h3{font-size:16px;font-weight:500}
-.mbody{padding:18px 20px}
+.mbody{padding:18px 20px 24px}
 .mft{padding:12px 20px;border-top:0.5px solid var(--bdr);display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:var(--bg2)}
 .fg2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
@@ -148,7 +148,7 @@ input[type=date]{color-scheme:dark}
 .foto-caption{font-size:11px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .foto-del{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.6);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;transition:opacity .15s}
 .foto-thumb:hover .foto-del{opacity:1}
-.foto-upload-area{border:1.5px dashed var(--bdr);border-radius:var(--rs);padding:20px;text-align:center;cursor:pointer;color:var(--tx2);transition:all .15s}
+.foto-upload-area{display:block;border:1.5px dashed var(--bdr);border-radius:var(--rs);padding:20px 16px;text-align:center;cursor:pointer;color:var(--tx2);transition:all .15s;margin-top:12px}
 .foto-upload-area:hover{border-color:var(--pri);color:var(--pri)}
 /* Lightbox */
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9998;display:none;align-items:center;justify-content:center;flex-direction:column}
