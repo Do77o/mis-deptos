@@ -495,7 +495,7 @@ function pushToFirebase(){
     deptos: S.deptos.map(d=>({
       ...d,
       docs: (d.docs||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
-      docsServicios: (d.docsServicios||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
+      docsServicios: (d.docsServicios||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null,svcKey:doc.svcKey||null,tk:doc.tk||null})),
       docsMantenimiento: (d.docsMantenimiento||[]).map(doc=>({name:doc.name,date:doc.date,size:doc.size,url:doc.url||null,path:doc.path||null})),
       fotos: (d.fotos||[]).map(f=>({name:f.name,date:f.date,size:f.size,url:f.url||null,path:f.path||null,caption:f.caption||''})),
     }))
@@ -923,18 +923,35 @@ function rPagosUnificado(){
         ${svcsActivos.length===0?`<div style="padding:10px 16px;font-size:13px;color:var(--tx2)">Sin servicios activos</div>`:
         svcsActivos.map(s=>{
           const reg=getSvcMes(d.id,tk,s.key);
-          return`<div style="padding:8px 16px;border-bottom:0.5px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div>
-              <div style="font-size:13px;font-weight:500"><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</div>
-              <div class="gs-monto" style="margin-top:4px">
-                <span style="color:var(--tx2);font-size:12px">$</span>
-                <input type="number" value="${reg.monto||''}" placeholder="0" style="width:90px;padding:4px 8px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1);text-align:right"
-                  onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
+          const facId=`fac-${d.id}-${s.key}`;
+          const facDocs=(d.docsServicios||[]).filter(doc=>doc.svcKey===s.key&&doc.tk===tk);
+          return`<div style="padding:8px 16px;border-bottom:0.5px solid var(--bdr)">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-size:13px;font-weight:500"><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</div>
+                <div class="gs-monto" style="margin-top:4px">
+                  <span style="color:var(--tx2);font-size:12px">$</span>
+                  <input type="number" value="${reg.monto||''}" placeholder="0" style="width:90px;padding:4px 8px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1);text-align:right"
+                    onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <label class="btn btn-s" for="${facId}" title="Subir factura" style="cursor:pointer"><i class="ti ti-receipt-2"></i></label>
+                <input type="file" id="${facId}" style="display:none" accept=".pdf,.jpg,.jpeg,.png"
+                  onchange="uploadFacturaPago('${d.id}','${tk}','${s.key}',this)">
+                <button class="gs-toggle ${reg.pagado?'pagado':''}" onclick="toggleSvcPago('${d.id}','${tk}','${s.key}')">
+                  <i class="ti ${reg.pagado?'ti-check':'ti-clock'}"></i> ${reg.pagado?'Cobrado':'Pendiente'}
+                </button>
               </div>
             </div>
-            <button class="gs-toggle ${reg.pagado?'pagado':''}" onclick="toggleSvcPago('${d.id}','${tk}','${s.key}')">
-              <i class="ti ${reg.pagado?'ti-check':'ti-clock'}"></i> ${reg.pagado?'Cobrado':'Pendiente'}
-            </button>
+            ${facDocs.length?`<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+              ${facDocs.map((doc,i)=>`<div style="display:flex;align-items:center;gap:4px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);padding:3px 8px;font-size:12px">
+                <i class="ti ti-file-text" style="color:var(--pri)"></i>
+                <a href="${doc.url}" target="_blank" style="color:var(--tx1);text-decoration:none">${doc.name}</a>
+                <button onclick="delFacturaPago('${d.id}','${doc.path}','${doc.name}')" style="background:none;border:none;color:var(--tx2);cursor:pointer;padding:0 2px"><i class="ti ti-x" style="font-size:11px"></i></button>
+              </div>`).join('')}
+            </div>`:''}
+            <div id="fac-status-${d.id}-${s.key}" style="min-height:0"></div>
           </div>`;
         }).join('')}
       </div>
@@ -1644,7 +1661,34 @@ function delDoc(id, idx, docKey){
   renderDeptoModal(d);
 }
 
-// ======= FOTOS =======
+function uploadFacturaPago(deptoId, tk, svcKey, input){
+  const d=S.deptos.find(x=>x.id===deptoId);
+  if(!d||!input.files[0])return;
+  const file=input.files[0];
+  const size=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
+  const statusEl=document.getElementById(`fac-status-${deptoId}-${svcKey}`);
+  if(statusEl) statusEl.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Subiendo...</span>`;
+  const path=`docs/${deptoId}/servicios/${tk}_${svcKey}_${Date.now()}_${file.name}`;
+  storage.ref(path).put(file).then(snap=>snap.ref.getDownloadURL()).then(url=>{
+    if(!d.docsServicios) d.docsServicios=[];
+    d.docsServicios.push({name:file.name,date:today(),size,url,path,svcKey,tk});
+    save();
+    // update in place without re-render
+    if(statusEl) statusEl.innerHTML='';
+    render();
+  }).catch(e=>{
+    if(statusEl) statusEl.innerHTML=`<span style="font-size:12px;color:var(--dan)">Error: ${e.message}</span>`;
+  });
+}
+
+function delFacturaPago(deptoId, path, name){
+  if(!confirm(`¿Eliminar "${name}"?`))return;
+  const d=S.deptos.find(x=>x.id===deptoId);
+  if(!d)return;
+  if(path) storage.ref(path).delete().catch(e=>console.warn('Storage delete:',e));
+  d.docsServicios=(d.docsServicios||[]).filter(doc=>doc.path!==path);
+  save(); render();
+}
 let _lbDeptoId=null, _lbIdx=0;
 
 async function uploadFotos(id, input){
