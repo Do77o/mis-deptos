@@ -1245,8 +1245,8 @@ function renderDeptoModal(d){
   const tk=todayKey();
   const p=d.payments[tk]||'no';
   document.getElementById('mtitle').textContent=`${d.group} ${d.label}${d.label.includes('úplex')?'':''}`;
-  const tabs=['info','contrato','servicios','svc-mes','docs-mant','notas'];
-  const tabLabels=['Inquilino','Contrato','Servicios','Gastos','Docs Mant.','Notas'];
+  const tabs=['info','servicios','contrato','svc-mes','docs-mant','notas'];
+  const tabLabels=['Inquilino','Servicios','Contrato','Gastos','Mantenimiento','Notas'];
   let body=`<div class="tb">${tabs.map((x,i)=>`<div class="tab ${t===x?'active':''}" onclick="switchDeptoTab('${x}')">${tabLabels[i]}</div>`).join('')}</div>`;
 
   if(t==='info'){
@@ -1334,27 +1334,7 @@ function renderDeptoModal(d){
     <div class="st">Datos de cuenta / referencia</div>
     ${svcs.filter(s=>!(s.key==='expensas'&&isVilela)).map(s=>`<div class="fi"><label class="fl2">${s.label}${s.key==='expensas'?' — CBU':''}</label><input id="f-acc-${s.key}" value="${d.accounts[s.key]||''}" placeholder="${placeholders[s.key]||'Número o usuario'}"></div>`).join('')}
     ${isVilela?`<input type="hidden" id="f-acc-expensas" value="">`:''}
-    <div class="st" style="margin-top:20px"><i class="ti ti-receipt"></i> Facturas (luz, gas, internet...)</div>
-    ${(d.docsServicios||[]).length===0?`<div class="es" style="padding:12px 0"><i class="ti ti-file-off"></i><p>Sin facturas cargadas</p></div>`:''}
-    ${(d.docsServicios||[]).map((doc,i)=>`
-      <div class="doc-item">
-        <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
-        <div style="flex:1;min-width:0">
-          <div class="doc-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.name}</div>
-          <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'docsServicios')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
-          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'docsServicios')"><i class="ti ti-trash"></i></button>
-        </div>
-      </div>`).join('')}
-    <div id="us-docsServicios-${d.id}" style="margin:6px 0;min-height:18px"></div>
-    <label class="upload-area" for="fu-docsServicios-${d.id}" style="display:block;margin-top:4px">
-      <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:5px"></i>
-      Subir factura (PDF, imagen)
-    </label>
-    <input type="file" id="fu-docsServicios-${d.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png"
-      onchange="uploadDoc('${d.id}',this,'docsServicios','us-docsServicios-${d.id}')">`;
+    `;
   } else if(t==='svc-mes'){
     const svcsActivos=getAllSvcs().filter(s=>d.services[s.key]&&!(s.key==='expensas'&&d.group==='Vilela'));
     if(!svcsActivos.length){
@@ -1387,7 +1367,28 @@ function renderDeptoModal(d){
       </table>
       <div style="margin-top:14px">
         <button class="btn btn-s" onclick="openHistorialSvc('${d.id}')"><i class="ti ti-history"></i> Ver historial completo</button>
-      </div>`;
+      </div>
+      <div class="st" style="margin-top:20px"><i class="ti ti-receipt"></i> Facturas de servicios</div>
+      ${(d.docsServicios||[]).length===0?`<div class="es" style="padding:12px 0"><i class="ti ti-file-off"></i><p>Sin facturas cargadas</p></div>`:''}
+      ${(d.docsServicios||[]).map((doc,i)=>`
+        <div class="doc-item">
+          <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
+          <div style="flex:1;min-width:0">
+            <div class="doc-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.name}</div>
+            <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'docsServicios')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
+            <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'docsServicios')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>`).join('')}
+      <div id="us-docsServicios-${d.id}" style="margin:6px 0;min-height:18px"></div>
+      <label class="upload-area" for="fu-docsServicios-${d.id}" style="display:block;margin-top:4px">
+        <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:5px"></i>
+        Subir factura (PDF, imagen)
+      </label>
+      <input type="file" id="fu-docsServicios-${d.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png"
+        onchange="uploadDoc('${d.id}',this,'docsServicios','us-docsServicios-${d.id}')">`;
     }
   } else if(t==='docs-mant'){
     const docs=d.docsMantenimiento||[];
