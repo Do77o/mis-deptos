@@ -65,12 +65,12 @@ body{font-family:var(--font-sans,system-ui,sans-serif);background:var(--bg3);col
 .fl{grid-column:1/-1;background:rgba(255,255,255,0.04);padding:7px 16px;font-size:12px;font-weight:500;color:var(--tx2);border-bottom:0.5px solid var(--bdr)}
 .sm{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
 .sd{width:7px;height:7px;border-radius:50%;display:inline-block}
-.mo{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
-.mb{background:var(--bg2);border-radius:var(--r);width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:100;padding:24px}
+.mb{background:var(--bg2);border-radius:var(--r);width:100%;max-width:680px;max-height:92vh;overflow-y:auto}
 .mh{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:0.5px solid var(--bdr);position:sticky;top:0;background:var(--bg2);z-index:1}
 .mh h3{font-size:16px;font-weight:500}
-.mbody{padding:20px}
-.mft{padding:12px 20px;border-bottom:0.5px solid var(--bdr);display:flex;gap:8px;justify-content:flex-end}
+.mbody{padding:18px 20px}
+.mft{padding:12px 20px;border-top:0.5px solid var(--bdr);display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:var(--bg2)}
 .fg2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 label.fl2{display:block;font-size:11px;font-weight:500;color:var(--tx2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
@@ -1245,8 +1245,8 @@ function renderDeptoModal(d){
   const tk=todayKey();
   const p=d.payments[tk]||'no';
   document.getElementById('mtitle').textContent=`${d.group} ${d.label}${d.label.includes('úplex')?'':''}`;
-  const tabs=['info','contrato','servicios','svc-mes','docs-inquilino','docs-servicios','docs-mant','notas'];
-  const tabLabels=['Inquilino','Contrato','Servicios','Gastos','Docs Inquilino','Docs Servicios','Docs Mant.','Notas'];
+  const tabs=['info','contrato','servicios','svc-mes','docs-mant','notas'];
+  const tabLabels=['Inquilino','Contrato','Servicios','Gastos','Docs Mant.','Notas'];
   let body=`<div class="tb">${tabs.map((x,i)=>`<div class="tab ${t===x?'active':''}" onclick="switchDeptoTab('${x}')">${tabLabels[i]}</div>`).join('')}</div>`;
 
   if(t==='info'){
@@ -1299,7 +1299,28 @@ function renderDeptoModal(d){
     </div>
     <div id="usd-fields" style="${c.currency!=='usd'?'display:none':''}">
       <div style="background:var(--pri-l);border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--pri)"><i class="ti ti-currency-dollar" aria-hidden="true"></i> Contrato en USD: podés convertir a pesos en la sección Contratos e IPC.</div>
-    </div>`;
+    </div>
+    <div class="st" style="margin-top:20px"><i class="ti ti-files"></i> Documentos del contrato (DNI, garantía, recibo de sueldo...)</div>
+    ${(d.docs||[]).length===0?`<div class="es" style="padding:12px 0"><i class="ti ti-file-off"></i><p>Sin documentos</p></div>`:''}
+    ${(d.docs||[]).map((doc,i)=>`
+      <div class="doc-item">
+        <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
+        <div style="flex:1;min-width:0">
+          <div class="doc-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.name}</div>
+          <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'docs')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
+          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'docs')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`).join('')}
+    <div id="us-docs-${d.id}" style="margin:6px 0;min-height:18px"></div>
+    <label class="upload-area" for="fu-docs-${d.id}" style="display:block;margin-top:4px">
+      <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:5px"></i>
+      Subir documento (PDF, Word, imagen)
+    </label>
+    <input type="file" id="fu-docs-${d.id}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+      onchange="uploadDoc('${d.id}',this,'docs','us-docs-${d.id}')">`;
   } else if(t==='servicios'){
     const svcs=getAllSvcs();
     const placeholders={luz:'Edenor/Edesur · N° cuenta',metrogas:'N° cuenta',internet:'Usuario',football:'',expensas:'CBU para transferir'};
@@ -1313,7 +1334,27 @@ function renderDeptoModal(d){
     <div class="st">Datos de cuenta / referencia</div>
     ${svcs.filter(s=>!(s.key==='expensas'&&isVilela)).map(s=>`<div class="fi"><label class="fl2">${s.label}${s.key==='expensas'?' — CBU':''}</label><input id="f-acc-${s.key}" value="${d.accounts[s.key]||''}" placeholder="${placeholders[s.key]||'Número o usuario'}"></div>`).join('')}
     ${isVilela?`<input type="hidden" id="f-acc-expensas" value="">`:''}
-    `;
+    <div class="st" style="margin-top:20px"><i class="ti ti-receipt"></i> Facturas (luz, gas, internet...)</div>
+    ${(d.docsServicios||[]).length===0?`<div class="es" style="padding:12px 0"><i class="ti ti-file-off"></i><p>Sin facturas cargadas</p></div>`:''}
+    ${(d.docsServicios||[]).map((doc,i)=>`
+      <div class="doc-item">
+        <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
+        <div style="flex:1;min-width:0">
+          <div class="doc-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.name}</div>
+          <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'docsServicios')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
+          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'docsServicios')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`).join('')}
+    <div id="us-docsServicios-${d.id}" style="margin:6px 0;min-height:18px"></div>
+    <label class="upload-area" for="fu-docsServicios-${d.id}" style="display:block;margin-top:4px">
+      <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:5px"></i>
+      Subir factura (PDF, imagen)
+    </label>
+    <input type="file" id="fu-docsServicios-${d.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png"
+      onchange="uploadDoc('${d.id}',this,'docsServicios','us-docsServicios-${d.id}')">`;
   } else if(t==='svc-mes'){
     const svcsActivos=getAllSvcs().filter(s=>d.services[s.key]&&!(s.key==='expensas'&&d.group==='Vilela'));
     if(!svcsActivos.length){
@@ -1348,16 +1389,11 @@ function renderDeptoModal(d){
         <button class="btn btn-s" onclick="openHistorialSvc('${d.id}')"><i class="ti ti-history"></i> Ver historial completo</button>
       </div>`;
     }
-  } else if(t==='docs-inquilino'||t==='docs-servicios'||t==='docs-mant'){
-    const docKey = t==='docs-inquilino'?'docs':t==='docs-servicios'?'docsServicios':'docsMantenimiento';
-    const docLabel = t==='docs-inquilino'?'del inquilino (DNI, contrato, garantía...)':t==='docs-servicios'?'de servicios (facturas de luz, gas, internet...)':'de mantenimiento (presupuestos, facturas de proveedores...)';
-    const docIcon = t==='docs-inquilino'?'ti-user':t==='docs-servicios'?'ti-receipt':'ti-tool';
-    const docs = d[docKey]||[];
-    const uploadId = `fu-${t}-${d.id}`;
-    const statusId = `us-${t}-${d.id}`;
+  } else if(t==='docs-mant'){
+    const docs=d.docsMantenimiento||[];
     body+=`
-    <div class="st"><i class="ti ${docIcon}"></i> Documentos ${docLabel}</div>
-    ${docs.length===0?`<div class="es" style="padding:16px 0"><i class="ti ti-file-off"></i><p>Sin documentos</p></div>`:''}
+    <div class="st"><i class="ti ti-tool"></i> Docs de mantenimiento (presupuestos, facturas de proveedores...)</div>
+    ${docs.length===0?`<div class="es" style="padding:12px 0"><i class="ti ti-file-off"></i><p>Sin documentos</p></div>`:''}
     ${docs.map((doc,i)=>`
       <div class="doc-item">
         <i class="ti ${doc.name.endsWith('.pdf')?'ti-file-type-pdf':doc.name.match(/docx?$/i)?'ti-file-type-doc':'ti-file-text'} doc-icon"></i>
@@ -1366,17 +1402,17 @@ function renderDeptoModal(d){
           <div class="doc-meta">${doc.date}${doc.size?' · '+doc.size:''}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'${docKey}')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
-          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'${docKey}')"><i class="ti ti-trash"></i></button>
+          ${(doc.url||doc.data)?`<button class="btn btn-s" onclick="downloadDoc('${d.id}',${i},'docsMantenimiento')" title="Descargar"><i class="ti ti-download"></i></button>`:''}
+          <button class="btn btn-s btn-d" onclick="delDoc('${d.id}',${i},'docsMantenimiento')"><i class="ti ti-trash"></i></button>
         </div>
       </div>`).join('')}
-    <div id="${statusId}" style="margin:8px 0;min-height:20px"></div>
-    <label class="upload-area" for="${uploadId}" style="display:block;margin-top:4px">
-      <i class="ti ti-upload" style="font-size:22px;display:block;margin-bottom:6px"></i>
-      Subir archivo (PDF, Word, imagen)
+    <div id="us-docsMantenimiento-${d.id}" style="margin:6px 0;min-height:18px"></div>
+    <label class="upload-area" for="fu-docsMantenimiento-${d.id}" style="display:block;margin-top:4px">
+      <i class="ti ti-upload" style="font-size:20px;display:block;margin-bottom:5px"></i>
+      Subir documento (PDF, Word, imagen)
     </label>
-    <input type="file" id="${uploadId}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx"
-      onchange="uploadDoc('${d.id}',this,'${docKey}','${statusId}')">`;
+    <input type="file" id="fu-docsMantenimiento-${d.id}" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+      onchange="uploadDoc('${d.id}',this,'docsMantenimiento','us-docsMantenimiento-${d.id}')">`;
   } else if(t==='notas'){
     body+=`
     <div class="st">Notas del inquilino</div>
@@ -1387,7 +1423,7 @@ function renderDeptoModal(d){
     ${(d.notas||[]).length===0?`<div class="es"><i class="ti ti-notes"></i><p>Sin notas</p></div>`:(d.notas||[]).slice().reverse().map((n,ri)=>{const i=(d.notas.length-1-ri);return`<div class="nota-item"><div class="nota-text">${n.text}</div><div style="display:flex;justify-content:space-between;align-items:center"><div class="nota-date">${n.date}</div><button class="btn btn-s" onclick="delNota('${d.id}',${i})"><i class="ti ti-trash"></i></button></div></div>`}).join('')}`;
   }
   document.getElementById('mbody').innerHTML=body;
-  const saveBtn=['docs-inquilino','docs-servicios','docs-mant','notas','svc-mes'].includes(t)?'':
+  const saveBtn=['docs-mant','notas','svc-mes'].includes(t)?'':
     `<button class="btn btn-p" onclick="saveDepto('${d.id}')">Guardar</button>`;
   document.getElementById('mft').innerHTML=`<button class="btn btn-d btn-s" onclick="deleteDepto('${d.id}')" style="margin-right:auto"><i class="ti ti-trash"></i></button><button class="btn" onclick="cm()">Cerrar</button>${saveBtn}`;
 }
