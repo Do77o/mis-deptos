@@ -204,7 +204,6 @@ input[type=date]{color-scheme:dark}
     <div class="nav" onclick="sv('pagos')" id="nav-pagos"><i class="ti ti-cash"></i> Pagos</div>
     <div class="nav" onclick="sv('contratos')" id="nav-contratos"><i class="ti ti-file-text"></i> Contratos e IPC</div>
     <div class="nav" onclick="sv('servicios')" id="nav-servicios"><i class="ti ti-plug"></i> Servicios</div>
-    <div class="nav" onclick="sv('gastos')" id="nav-gastos"><i class="ti ti-receipt"></i> Gastos servicios</div>
     <div class="nav" onclick="sv('mantenimiento')" id="nav-mantenimiento"><i class="ti ti-tool"></i> Mantenimiento</div>
     <div class="nav" onclick="sv('informacion')" id="nav-informacion"><i class="ti ti-info-circle"></i> Información</div>
     <div class="nav" onclick="sv('agenda')" id="nav-agenda"><i class="ti ti-calendar-event"></i> Agenda</div>
@@ -677,10 +676,9 @@ function render(){
   const m=document.getElementById('mc');
   if(v==='dashboard') m.innerHTML=rDashboard();
   else if(v==='deptos') m.innerHTML=rDeptos();
-  else if(v==='pagos') m.innerHTML=rPagos();
+  else if(v==='pagos') m.innerHTML=rPagosUnificado();
   else if(v==='contratos') m.innerHTML=rContratos();
   else if(v==='servicios') m.innerHTML=rServicios();
-  else if(v==='gastos') m.innerHTML=rGastos();
   else if(v==='mantenimiento') m.innerHTML=rMantenimiento();
   else if(v==='informacion') m.innerHTML=rInformacion();
   else if(v==='agenda') m.innerHTML=rAgenda();
@@ -806,37 +804,116 @@ function rDeptoList(f,tk){
   return h||'<div class="es" style="grid-column:1/-1"><i class="ti ti-search"></i><p>Sin resultados</p></div>';
 }
 
-function rPagos(){
+function rPagosUnificado(){
   const n=new Date();
   const months=[];
-  for(let i=2;i>=-1;i--){const d=new Date(n.getFullYear(),n.getMonth()-i,1);months.push({key:mk(d.getFullYear(),d.getMonth()),label:`${MONTHS[d.getMonth()]} ${d.getFullYear()}`});}
-  const sel=window._pm||todayKey();
-  const occ=S.deptos.filter(d=>d.occupancy==='occupied').sort((a,b)=>(a.group+a.label).localeCompare(b.group+b.label,'es',{numeric:true}));
+  for(let i=3;i>=-1;i--){
+    const d=new Date(n.getFullYear(),n.getMonth()-i,1);
+    months.push({key:mk(d.getFullYear(),d.getMonth()),label:`${MONTHS[d.getMonth()]} ${d.getFullYear()}`});
+  }
+  const tk=window._pm||todayKey();
+  const occ=S.deptos.filter(d=>d.occupancy==='occupied')
+    .sort((a,b)=>(a.group+a.label).localeCompare(b.group+b.label,'es',{numeric:true}));
+
+  // Totals
+  const totalAlq=occ.reduce((acc,d)=>{
+    const base=Number(d.contract?.amount||0);
+    const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+    return acc+base+coch;
+  },0);
+  const cobradoAlq=occ.filter(d=>d.payments[tk]==='yes').reduce((acc,d)=>{
+    return acc+Number(d.contract?.amount||0)+(d.cochera?.tiene?Number(d.cochera.precio||0):0);
+  },0);
+  const totalSvcs=occ.reduce((acc,d)=>acc+totalSvcMes(d.id,tk),0);
+  const cobradoSvcs=occ.reduce((acc,d)=>acc+totalSvcMesPagado(d.id,tk),0);
+
   return`
   <div class="hdr"><h1>Pagos</h1></div>
-  <div class="tb">${months.map(m=>`<div class="tab ${m.key===sel?'active':''}" onclick="setPM('${m.key}')">${m.label}</div>`).join('')}</div>
-  <div class="card">${occ.length===0?`<div class="es"><i class="ti ti-user"></i><p>No hay inquilinos</p></div>`:occ.map(d=>{
-    const p=d.payments[sel]||'no';
+  <div class="tb">${months.map(m=>`<div class="tab ${m.key===tk?'active':''}" onclick="setPM('${m.key}')">${m.label}</div>`).join('')}</div>
+
+  <div class="stats-grid" style="margin-bottom:16px">
+    <div class="sc"><div class="lbl">Alquiler esperado</div><div class="val" style="font-size:16px">$ ${totalAlq.toLocaleString('es-AR')}</div></div>
+    <div class="sc s"><div class="lbl">Alquiler cobrado</div><div class="val" style="font-size:16px">$ ${cobradoAlq.toLocaleString('es-AR')}</div></div>
+    <div class="sc"><div class="lbl">Servicios esperado</div><div class="val" style="font-size:16px">$ ${totalSvcs.toLocaleString('es-AR')}</div></div>
+    <div class="sc s"><div class="lbl">Servicios cobrado</div><div class="val" style="font-size:16px">$ ${cobradoSvcs.toLocaleString('es-AR')}</div></div>
+  </div>
+
+  ${occ.length===0?`<div class="card"><div class="es"><i class="ti ti-user"></i><p>No hay inquilinos</p></div></div>`:
+  occ.map(d=>{
+    const p=d.payments[tk]||'no';
     const cur=d.contract?.currency==='usd'?'USD':'$';
-    const amt=d.contract?.amount?`${cur} ${Number(d.contract.amount).toLocaleString('es-AR')}${d.cochera?.tiene&&d.cochera?.precio?' + cochera $'+Number(d.cochera.precio).toLocaleString('es-AR'):''}`:'';
-    return`<div class="sr">
-      <div class="si"><div>
-        <div class="sn">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>
-        <div class="sa">Vence día ${d.paymentDay}${amt?' · '+amt:''} · ${d.phone||'sin tel.'}</div>
-      </div></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span class="badge ${p==='yes'?'bp':p==='partial'?'bpa':'bu'}">${p==='yes'?'Pagó':p==='partial'?'Parcial':'Sin pago'}</span>
-        <select style="font-size:12px;padding:4px 8px;border-radius:var(--rs);border:0.5px solid var(--bdr);background:var(--bg2);color:var(--tx1)" onchange="setPago('${d.id}','${sel}',this.value)">
-          <option value="no" ${p==='no'?'selected':''}>Sin pago</option>
-          <option value="partial" ${p==='partial'?'selected':''}>Parcial</option>
-          <option value="yes" ${p==='yes'?'selected':''}>Pagó</option>
-        </select>
+    const baseAmt=d.contract?.amount?Number(d.contract.amount):0;
+    const cochAmt=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+    const svcsActivos=getAllSvcs().filter(s=>d.services[s.key]&&!(s.key==='expensas'&&d.group==='Vilela'));
+    const totalSvc=totalSvcMes(d.id,tk);
+    const cobSvc=totalSvcMesPagado(d.id,tk);
+    const totalDepto=(p==='yes'?(baseAmt+cochAmt):0)+cobSvc;
+    const esperadoDepto=(baseAmt+cochAmt)+totalSvc;
+    const estadoClass=esperadoDepto===0?'':totalDepto>=esperadoDepto?'pagado':totalDepto>0?'parcial':'debe';
+
+    return`<div class="card" style="margin-bottom:10px">
+      <div class="ch" style="cursor:pointer" onclick="togglePagoRow('${d.id}')">
+        <div>
+          <div style="font-size:14px;font-weight:500">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:2px">Vence día ${d.paymentDay} · ${d.phone||'sin tel.'}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${esperadoDepto>0?`<span class="gs-total ${estadoClass}">$ ${totalDepto.toLocaleString('es-AR')} / $ ${esperadoDepto.toLocaleString('es-AR')}</span>`:''}
+          <i class="ti ti-chevron-down" id="chev-${d.id}" style="color:var(--tx2);transition:transform .2s"></i>
+        </div>
+      </div>
+      <div id="pagorow-${d.id}" style="display:none">
+        <!-- ALQUILER -->
+        <div style="padding:10px 16px;border-bottom:0.5px solid var(--bdr)">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:13px;font-weight:500">🏠 Alquiler${cochAmt?` + cochera`:''}</div>
+              <div style="font-size:12px;color:var(--tx2)">${baseAmt?`${cur} ${baseAmt.toLocaleString('es-AR')}${cochAmt?' + cochera $'+cochAmt.toLocaleString('es-AR'):''}`:' Sin monto cargado'}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge ${p==='yes'?'bp':p==='partial'?'bpa':'bu'}">${p==='yes'?'Pagó':p==='partial'?'Parcial':'Sin pago'}</span>
+              <select style="font-size:12px;padding:5px 8px;border-radius:var(--rs);border:0.5px solid var(--bdr);background:var(--bg2);color:var(--tx1)" onchange="setPago('${d.id}','${tk}',this.value)">
+                <option value="no" ${p==='no'?'selected':''}>Sin pago</option>
+                <option value="partial" ${p==='partial'?'selected':''}>Parcial</option>
+                <option value="yes" ${p==='yes'?'selected':''}>Pagó</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <!-- SERVICIOS -->
+        ${svcsActivos.length===0?`<div style="padding:10px 16px;font-size:13px;color:var(--tx2)">Sin servicios activos</div>`:
+        svcsActivos.map(s=>{
+          const reg=getSvcMes(d.id,tk,s.key);
+          return`<div style="padding:8px 16px;border-bottom:0.5px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:13px;font-weight:500"><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</div>
+              <div class="gs-monto" style="margin-top:4px">
+                <span style="color:var(--tx2);font-size:12px">$</span>
+                <input type="number" value="${reg.monto||''}" placeholder="0" style="width:90px;padding:4px 8px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1);text-align:right"
+                  onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
+              </div>
+            </div>
+            <button class="gs-toggle ${reg.pagado?'pagado':''}" onclick="toggleSvcPago('${d.id}','${tk}','${s.key}')">
+              <i class="ti ${reg.pagado?'ti-check':'ti-clock'}"></i> ${reg.pagado?'Cobrado':'Pendiente'}
+            </button>
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
-  }).join('')}</div>`;
+  }).join('')}`;
 }
+
+function togglePagoRow(id){
+  const el=document.getElementById('pagorow-'+id);
+  const chev=document.getElementById('chev-'+id);
+  if(!el)return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  if(chev) chev.style.transform=open?'rotate(180deg)':'rotate(0deg)';
+}
+
 function setPM(k){window._pm=k;render();}
-function setPago(id,k,v){const d=S.deptos.find(x=>x.id===id);if(d){d.payments[k]=v;save();updateBadge();}}
+function setPago(id,k,v){const d=S.deptos.find(x=>x.id===id);if(d){d.payments[k]=v;save();render();updateBadge();}}
 
 function rContratos(){
   const occ=S.deptos.filter(d=>d.occupancy==='occupied').sort((a,b)=>(a.group+a.label).localeCompare(b.group+b.label,'es',{numeric:true}));
@@ -983,126 +1060,25 @@ function calcUSD(id){
 }
 
 // ======= GASTOS DE SERVICIOS =======
-function rGastos(){
-  const tk = window._gsTk || todayKey();
-  const viewMode = window._gsView || 'mes'; // 'mes' | 'depto'
-  const deptos = S.deptos.filter(d=>d.occupancy==='occupied')
-    .sort((a,b)=>(a.group+a.label).localeCompare(b.group+b.label,'es',{numeric:true}));
-
-  // Build list of months with any data + current month
-  const allTks = new Set([todayKey()]);
-  Object.values(S.svcCostos||{}).forEach(d=>Object.keys(d).forEach(k=>allTks.add(k)));
-  const months = [...allTks].sort((a,b)=>b.localeCompare(a));
-
-  const monthLabel = tk2label(tk);
-
-  return`
-  <div class="hdr">
-    <h1>Gastos de servicios</h1>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select style="padding:7px 10px;background:var(--bg2);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1)" onchange="window._gsTk=this.value;render()">
-        ${months.map(m=>`<option value="${m}" ${m===tk?'selected':''}>${tk2label(m)}</option>`).join('')}
-      </select>
-    </div>
-  </div>
-
-  <!-- Resumen del mes -->
-  <div class="stats-grid" style="margin-bottom:16px">
-    ${(()=>{
-      const total=deptos.reduce((acc,d)=>acc+totalSvcMes(d.id,tk),0);
-      const cobrado=deptos.reduce((acc,d)=>acc+totalSvcMesPagado(d.id,tk),0);
-      const pendiente=total-cobrado;
-      return`
-        <div class="sc"><div class="lbl">Total facturado</div><div class="val">$ ${total.toLocaleString('es-AR')}</div></div>
-        <div class="sc s"><div class="lbl">Cobrado a inquilinos</div><div class="val">$ ${cobrado.toLocaleString('es-AR')}</div></div>
-        <div class="sc ${pendiente>0?'d':''}"><div class="lbl">Pendiente de cobro</div><div class="val">$ ${pendiente.toLocaleString('es-AR')}</div></div>`;
-    })()}
-  </div>
-
-  <!-- Tabla por depto -->
-  ${deptos.length===0?`<div class="card"><div class="es"><i class="ti ti-users-group"></i><p>No hay inquilinos activos</p></div></div>`:
-  deptos.map(d=>{
-    const svcsActivos=getAllSvcs().filter(s=>d.services[s.key] && !(s.key==='expensas'&&d.group==='Vilela'));
-    if(!svcsActivos.length) return'';
-    const total=totalSvcMes(d.id,tk);
-    const cobrado=totalSvcMesPagado(d.id,tk);
-    const pct=total>0?Math.round(cobrado/total*100):0;
-    const estadoClass=total===0?'':cobrado===0?'debe':cobrado<total?'parcial':'pagado';
-    return`<div class="card" style="margin-bottom:12px">
-      <div class="ch">
-        <h3 style="display:flex;align-items:center;gap:10px">
-          <span>${d.group} ${d.label}</span>
-          <span style="font-size:12px;font-weight:400;color:var(--tx2)">${d.tenant}</span>
-        </h3>
-        <div style="display:flex;align-items:center;gap:10px">
-          ${total>0?`<span class="gs-total ${estadoClass}">$ ${cobrado.toLocaleString('es-AR')} / $ ${total.toLocaleString('es-AR')}</span>`:''}
-          <button class="btn btn-s" onclick="openHistorialSvc('${d.id}')"><i class="ti ti-history"></i> Historial</button>
-        </div>
-      </div>
-      <table class="gs-table">
-        <thead><tr>
-          <th>Servicio</th>
-          <th>Monto este mes</th>
-          <th>Estado</th>
-        </tr></thead>
-        <tbody>
-          ${svcsActivos.map(s=>{
-            const reg=getSvcMes(d.id,tk,s.key);
-            return`<tr>
-              <td><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</td>
-              <td>
-                <div class="gs-monto">
-                  <span style="color:var(--tx2);font-size:12px">$</span>
-                  <input type="number" value="${reg.monto||''}" placeholder="0"
-                    onchange="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})"
-                    onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
-                </div>
-              </td>
-              <td>
-                <button class="gs-toggle ${reg.pagado?'pagado':''}" onclick="toggleSvcPago('${d.id}','${tk}','${s.key}')">
-                  <i class="ti ${reg.pagado?'ti-check':'ti-clock'}"></i>
-                  ${reg.pagado?'Cobrado':'Pendiente'}
-                </button>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-  }).join('')}`;
-}
-
 function tk2label(tk){
   const [y,m]=tk.split('-');
   return `${MONTHS[parseInt(m)-1]} ${y}`;
 }
-
 function guardarSvcCosto(deptoId, tk, svcKey, monto, pagado){
-  const montoNum = monto===''?'':Number(monto);
-  setSvcMes(deptoId, tk, svcKey, montoNum, pagado);
+  setSvcMes(deptoId, tk, svcKey, monto===''?'':Number(monto), pagado);
   save();
-  // No re-render para no interrumpir el input en foco
-  // Solo actualizamos los totales visualmente
-  updateGastosTotales(deptoId, tk);
 }
-
 function toggleSvcPago(deptoId, tk, svcKey){
   const reg=getSvcMes(deptoId, tk, svcKey);
   setSvcMes(deptoId, tk, svcKey, reg.monto, !reg.pagado);
   save(); render();
 }
-
-function updateGastosTotales(deptoId, tk){
-  // lightweight update without full re-render
-}
-
 function openHistorialSvc(deptoId){
   const d=S.deptos.find(x=>x.id===deptoId);
   if(!d)return;
   const svcsActivos=getAllSvcs().filter(s=>d.services[s.key]);
   const dc=S.svcCostos?.[deptoId]||{};
   const tks=Object.keys(dc).sort((a,b)=>b.localeCompare(a));
-
   document.getElementById('mtitle').textContent=`Historial servicios — ${d.group} ${d.label}`;
   document.getElementById('mbody').innerHTML=tks.length===0?
     `<div class="es"><i class="ti ti-history"></i><p>Sin historial todavía</p></div>`:
@@ -1129,7 +1105,6 @@ function openHistorialSvc(deptoId){
         }).join('')}
       </div>`;
     }).join('<hr style="border:none;border-top:0.5px solid var(--bdr);margin:4px 0 16px">');
-
   document.getElementById('mft').innerHTML=`<button class="btn" onclick="cm()">Cerrar</button>`;
   document.getElementById('modal').style.display='flex';
 }
