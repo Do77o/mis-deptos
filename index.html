@@ -202,7 +202,6 @@ input[type=date]{color-scheme:dark}
     <div class="nav active" onclick="sv('dashboard')" id="nav-dashboard"><i class="ti ti-layout-dashboard"></i> Panel</div>
     <div class="nav" onclick="sv('deptos')" id="nav-deptos"><i class="ti ti-home-2"></i> Departamentos</div>
     <div class="nav" onclick="sv('pagos')" id="nav-pagos"><i class="ti ti-cash"></i> Pagos</div>
-    <div class="nav" onclick="sv('contratos')" id="nav-contratos"><i class="ti ti-file-text"></i> Contratos e IPC</div>
     <div class="nav" onclick="sv('servicios')" id="nav-servicios"><i class="ti ti-plug"></i> Servicios</div>
     <div class="nav" onclick="sv('mantenimiento')" id="nav-mantenimiento"><i class="ti ti-tool"></i> Mantenimiento</div>
     <div class="nav" onclick="sv('informacion')" id="nav-informacion"><i class="ti ti-info-circle"></i> Información</div>
@@ -677,7 +676,6 @@ function render(){
   if(v==='dashboard') m.innerHTML=rDashboard();
   else if(v==='deptos') m.innerHTML=rDeptos();
   else if(v==='pagos') m.innerHTML=rPagosUnificado();
-  else if(v==='contratos') m.innerHTML=rContratos();
   else if(v==='servicios') m.innerHTML=rServicios();
   else if(v==='mantenimiento') m.innerHTML=rMantenimiento();
   else if(v==='informacion') m.innerHTML=rInformacion();
@@ -877,6 +875,7 @@ function rPagosUnificado(){
                 <option value="partial" ${p==='partial'?'selected':''}>Parcial</option>
                 <option value="yes" ${p==='yes'?'selected':''}>Pagó</option>
               </select>
+              ${baseAmt?`<button class="btn btn-s btn-w" onclick="openAjustarAlquiler('${d.id}')"><i class="ti ti-trending-up"></i> Ajustar</button>`:''}
             </div>
           </div>
         </div>
@@ -914,150 +913,6 @@ function togglePagoRow(id){
 
 function setPM(k){window._pm=k;render();}
 function setPago(id,k,v){const d=S.deptos.find(x=>x.id===id);if(d){d.payments[k]=v;save();render();updateBadge();}}
-
-function rContratos(){
-  const occ=S.deptos.filter(d=>d.occupancy==='occupied').sort((a,b)=>(a.group+a.label).localeCompare(b.group+b.label,'es',{numeric:true}));
-  return`
-  <div class="hdr"><h1>Contratos e IPC</h1><button class="btn btn-p" onclick="openIPC()"><i class="ti ti-trending-up" aria-hidden="true"></i> Ver IPC actual</button></div>
-  <div class="card">
-    ${occ.length===0?`<div class="es"><i class="ti ti-file-off"></i><p>No hay inquilinos registrados</p></div>`:occ.map(d=>{
-      const c=d.contract||{};
-      const hasAmt=c.amount&&c.amount!=='';
-      const meses=c.durationMonths||'—';
-      const fin=c.startDate&&c.durationMonths?calcEndDate(c.startDate,c.durationMonths):'—';
-      return`<div class="sr">
-        <div class="si"><div>
-          <div class="sn">${d.group} ${d.label}${d.tenant?' – '+d.tenant:''}</div>
-          <div class="sa">
-            ${{largo:'Contrato largo',corto:'Contrato corto',local:'Local comercial'}[c.type]||c.type} ·
-            ${c.currency==='usd'?'Dólares':'Pesos'} ·
-            ${hasAmt?(c.currency==='usd'?'USD ':'$ ')+Number(c.amount).toLocaleString('es-AR'):'Sin monto'}${d.cochera?.tiene&&d.cochera?.precio?' + cochera $ '+Number(d.cochera.precio).toLocaleString('es-AR'):''} ·
-            ${c.startDate?'Desde '+fDate(c.startDate):'Sin fecha inicio'} ·
-            ${fin!=='—'?'Hasta '+fDate(fin):meses+' meses'}
-            ${c.lastUpdate?' · Últ. actualiz.: '+fDate(c.lastUpdate):''}
-          </div>
-        </div></div>
-        <div style="display:flex;gap:6px">
-          ${c.currency==='ars'&&hasAmt?`<button class="btn btn-s btn-w" onclick="openActualizar('${d.id}')"><i class="ti ti-trending-up" aria-hidden="true"></i> IPC</button>`:''}
-          ${c.currency==='usd'?`<button class="btn btn-s" onclick="openUSD('${d.id}')"><i class="ti ti-currency-dollar" aria-hidden="true"></i> USD</button>`:''}
-          <button class="btn btn-s" onclick="openDepto('${d.id}','contrato')"><i class="ti ti-edit" aria-hidden="true"></i></button>
-        </div>
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-
-function calcEndDate(start,months){
-  const d=new Date(start+'T00:00:00');
-  d.setMonth(d.getMonth()+parseInt(months));
-  return d.toISOString().slice(0,10);
-}
-
-async function openIPC(){
-  document.getElementById('mtitle').textContent='IPC – Índice de Precios al Consumidor';
-  document.getElementById('mbody').innerHTML=`<div class="ipc-loader"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Consultando INDEC...</div>
-  <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
-  document.getElementById('mft').innerHTML=`<button class="btn" onclick="cm()">Cerrar</button>`;
-  document.getElementById('modal').style.display='flex';
-  const ipc=await fetchIPC();
-  if(!ipc){
-    document.getElementById('mbody').innerHTML=`<div style="color:var(--dan);font-size:14px;padding:8px 0"><i class="ti ti-alert-circle"></i> No se pudo obtener el IPC del INDEC. Verificá tu conexión o ingresá el porcentaje manualmente en cada contrato.</div>`;
-    return;
-  }
-  const arsDeptos=S.deptos.filter(d=>d.occupancy==='occupied'&&d.contract?.currency==='ars'&&d.contract?.amount);
-  document.getElementById('mbody').innerHTML=`
-    <div class="ipc-box">
-      <div style="font-size:12px;color:var(--suc)">IPC NACIONAL – ${ipc.date}</div>
-      <div class="ipc-val">+${ipc.pct}%</div>
-      <div class="ipc-sub">Variación mensual · Fuente: INDEC (apis.datos.gob.ar)</div>
-    </div>
-    ${arsDeptos.length===0?'<p style="font-size:14px;color:var(--tx2)">No hay contratos en pesos con monto cargado.</p>':
-    `<p style="font-size:13px;color:var(--tx2);margin-bottom:12px">Montos actualizados al +${ipc.pct}% mensual:</p>
-    ${arsDeptos.map(d=>{
-      const pct=parseFloat(ipc.pct)/100;
-      const base=Number(d.contract.amount);
-      const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
-      const nuevoBase=Math.round(base*(1+pct));
-      const nuevoCoch=coch?Math.round(coch*(1+pct)):0;
-      const detCoch=coch?` + cochera $ ${nuevoCoch.toLocaleString('es-AR')}`:'';
-      return`<div class="sr"><div class="si"><div>
-        <div class="sn">${d.group} ${d.label} – ${d.tenant}</div>
-        <div class="sa">$ ${base.toLocaleString('es-AR')}${coch?' + cochera $'+coch.toLocaleString('es-AR'):''} → $ ${nuevoBase.toLocaleString('es-AR')}${detCoch}</div>
-      </div></div>
-      <button class="btn btn-s btn-p" onclick="aplicarIPC('${d.id}','${nuevoBase}','${nuevoCoch}','${ipc.date}')">Aplicar</button></div>`;
-    }).join('')}`}`;
-}
-
-function aplicarIPC(id,nuevo,nuevoCoch,fecha){
-  const d=S.deptos.find(x=>x.id===id);
-  if(!d)return;
-  d.contract.amount=nuevo;
-  d.contract.lastUpdate=fecha;
-  if(d.cochera?.tiene && nuevoCoch) d.cochera.precio=nuevoCoch;
-  save();
-  document.getElementById('mbody').innerHTML+='';
-  openIPC();
-}
-
-async function openActualizar(id){
-  const d=S.deptos.find(x=>x.id===id);
-  document.getElementById('mtitle').textContent=`Actualizar contrato – ${d.group} ${d.label}`;
-  document.getElementById('mbody').innerHTML=`<div class="ipc-loader"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Consultando IPC...</div><style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
-  document.getElementById('mft').innerHTML=`<button class="btn" onclick="cm()">Cerrar</button>`;
-  document.getElementById('modal').style.display='flex';
-  const ipc=await fetchIPC();
-  const c=d.contract;
-  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
-  const manual=`
-    <div class="fi" style="margin-top:14px"><label class="fl2">O ingresá el porcentaje manualmente</label><input type="number" id="ipc-manual" placeholder="Ej: 8.4" step="0.1" min="0"></div>
-    <button class="btn btn-w" onclick="aplicarManual('${id}')"><i class="ti ti-check" aria-hidden="true"></i> Aplicar porcentaje manual</button>`;
-  if(!ipc){
-    document.getElementById('mbody').innerHTML=`<div style="color:var(--dan);font-size:14px;margin-bottom:12px">No se pudo obtener IPC automático.</div>${manual}`;
-    return;
-  }
-  const pct=parseFloat(ipc.pct)/100;
-  const nuevoBase=Math.round(Number(c.amount)*(1+pct));
-  const nuevoCoch=coch?Math.round(coch*(1+pct)):0;
-  document.getElementById('mbody').innerHTML=`
-    <div class="ipc-box"><div style="font-size:12px;color:var(--suc)">IPC – ${ipc.date}</div><div class="ipc-val">+${ipc.pct}%</div><div class="ipc-sub">Fuente: INDEC</div></div>
-    <p style="font-size:14px;margin-bottom:4px">Alquiler: <strong>$ ${Number(c.amount).toLocaleString('es-AR')}</strong> → <strong>$ ${nuevoBase.toLocaleString('es-AR')}</strong></p>
-    ${coch?`<p style="font-size:14px;margin-bottom:12px">Cochera: <strong>$ ${coch.toLocaleString('es-AR')}</strong> → <strong>$ ${nuevoCoch.toLocaleString('es-AR')}</strong></p>`:''}
-    <button class="btn btn-p" onclick="aplicarIPC('${id}','${nuevoBase}','${nuevoCoch}','${ipc.date}')"><i class="ti ti-check" aria-hidden="true"></i> Aplicar actualización IPC</button>
-    ${manual}`;
-}
-
-function aplicarManual(id){
-  const pct=parseFloat(document.getElementById('ipc-manual').value);
-  if(!pct||isNaN(pct))return;
-  const d=S.deptos.find(x=>x.id===id);
-  const nuevoBase=Math.round(Number(d.contract.amount)*(1+pct/100));
-  d.contract.amount=nuevoBase;
-  d.contract.lastUpdate=today();
-  if(d.cochera?.tiene && d.cochera.precio){
-    d.cochera.precio=Math.round(Number(d.cochera.precio)*(1+pct/100));
-  }
-  save();cm();render();updateBadge();
-}
-
-function openUSD(id){
-  const d=S.deptos.find(x=>x.id===id);
-  document.getElementById('mtitle').textContent=`Contrato USD – ${d.group} ${d.label}`;
-  document.getElementById('mbody').innerHTML=`
-    <p style="font-size:14px;margin-bottom:14px">Monto del contrato: <strong>USD ${Number(d.contract.amount).toLocaleString('es-AR')}</strong></p>
-    <div class="fi"><label class="fl2">Tipo de cambio ($ por USD)</label><input type="number" id="usd-rate" value="${S.usdRate||''}" placeholder="Ej: 1050"></div>
-    <div id="usd-result" style="margin-top:12px;font-size:15px;font-weight:500"></div>
-    <button class="btn btn-p" style="margin-top:12px" onclick="calcUSD('${id}')"><i class="ti ti-currency-dollar" aria-hidden="true"></i> Calcular en pesos</button>`;
-  document.getElementById('mft').innerHTML=`<button class="btn" onclick="cm()">Cerrar</button>`;
-  document.getElementById('modal').style.display='flex';
-}
-function calcUSD(id){
-  const d=S.deptos.find(x=>x.id===id);
-  const rate=parseFloat(document.getElementById('usd-rate').value);
-  if(!rate||isNaN(rate))return;
-  S.usdRate=rate;save();
-  const total=Math.round(Number(d.contract.amount)*rate);
-  document.getElementById('usd-result').innerHTML=`USD ${Number(d.contract.amount).toLocaleString()} × $${rate.toLocaleString()} = <span style="color:var(--pri)">$ ${total.toLocaleString('es-AR')}</span>`;
-}
 
 // ======= GASTOS DE SERVICIOS =======
 function tk2label(tk){
