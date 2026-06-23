@@ -1065,9 +1065,9 @@ function calcAjusteDirecto(id){
   if(!d)return;
   const base=Number(d.contract?.amount||0);
   const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
-  const nuevo=Number(document.getElementById('aj-monto')?.value||0);
+  const nuevo=parseMiles(document.getElementById('aj-monto')?.value||'');
   if(!nuevo)return;
-  const nuevoCoch=Number(document.getElementById('aj-coch')?.value||coch);
+  const nuevoCoch=parseMiles(document.getElementById('aj-coch')?.value||String(coch));
   if(base>0){
     const pct=((nuevo-base)/base*100).toFixed(2);
     const pctEl=document.getElementById('aj-pct');
@@ -1093,10 +1093,10 @@ function showAjPreview(d,nuevoBase,nuevoCoch){
 function aplicarAjuste(id){
   const d=S.deptos.find(x=>x.id===id);
   if(!d)return;
-  const nuevoBase=Number(document.getElementById('aj-monto')?.value||0);
+  const nuevoBase=parseMiles(document.getElementById('aj-monto')?.value||'');
   if(!nuevoBase){alert('Ingresá el nuevo monto.');return;}
   const cochEl=document.getElementById('aj-coch');
-  const nuevoCoch=cochEl?Number(cochEl.value||d.cochera?.precio||0):undefined;
+  const nuevoCoch=cochEl?parseMiles(cochEl.value||String(d.cochera?.precio||0)):undefined;
   d.contract.amount=nuevoBase;
   d.contract.lastUpdate=today();
   if(d.cochera?.tiene&&nuevoCoch) d.cochera.precio=nuevoCoch;
@@ -1361,7 +1361,7 @@ function renderDeptoModal(d){
       <div class="fi"><label class="fl2">Moneda</label><select id="f-ccur" onchange="toggleCurFields()"><option value="ars" ${c.currency!=='usd'?'selected':''}>Pesos (ARS)</option><option value="usd" ${c.currency==='usd'?'selected':''}>Dólares (USD)</option></select></div>
     </div>
     <div class="fg2">
-      <div class="fi"><label class="fl2">Monto mensual</label><input type="number" id="f-camt" value="${c.amount||''}" placeholder="0"></div>
+      <div class="fi"><label class="fl2">Monto mensual</label><input type="text" inputmode="numeric" id="f-camt" value="${c.amount?Number(c.amount).toLocaleString('es-AR'):''}" placeholder="0" oninput="fmtMiles(this)"></div>
       <div class="fi"><label class="fl2">Duración (meses)</label><input type="number" id="f-cdur" value="${c.durationMonths||24}" min="1"></div>
     </div>
     <div class="fg2">
@@ -1374,7 +1374,7 @@ function renderDeptoModal(d){
     <div id="cochera-fields" style="${d.cochera?.tiene?'':'display:none'}">
       <div class="fg2">
         <div class="fi"><label class="fl2">N° de cochera</label><input id="f-coch-num" value="${d.cochera?.numero||''}" placeholder="Ej: C-12"></div>
-        <div class="fi"><label class="fl2">Precio cochera (${c.currency==='usd'?'USD':'$'})</label><input type="number" id="f-coch-precio" value="${d.cochera?.precio||''}" placeholder="0"></div>
+        <div class="fi"><label class="fl2">Precio cochera (${c.currency==='usd'?'USD':'$'})</label><input type="text" inputmode="numeric" id="f-coch-precio" value="${d.cochera?.precio?Number(d.cochera.precio).toLocaleString('es-AR'):''}" placeholder="0" oninput="fmtMiles(this)"></div>
       </div>
       <div style="background:var(--pri-l);border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--pri)"><i class="ti ti-info-circle"></i> El precio de la cochera se suma al monto del depto al calcular actualizaciones por IPC.</div>
     </div>
@@ -1544,7 +1544,19 @@ function renderDeptoModal(d){
 }
 
 function switchDeptoTab(t){window._deptoTab=t;const d=S.deptos.find(x=>x.id===window._editingDepto);if(d)renderDeptoModal(d);}
-function toggleCurFields(){
+function fmtMiles(input){
+  // Remove all dots, keep only digits
+  const raw=input.value.replace(/\./g,'').replace(/\D/g,'');
+  if(!raw){input.value='';return;}
+  // Format with dots as thousands separator
+  input.value=Number(raw).toLocaleString('es-AR');
+  // Store raw numeric value as data attribute for reading
+  input.dataset.raw=raw;
+}
+function parseMiles(val){
+  // Strip dots and parse
+  return Number((val||'').replace(/\./g,'').replace(',','.')||0);
+}
   const v=document.getElementById('f-ccur').value;
   document.getElementById('ars-fields').style.display=v==='usd'?'none':'';
   document.getElementById('usd-fields').style.display=v==='usd'?'':'none';
@@ -1575,7 +1587,7 @@ function saveDepto(id){
     d.contract={
       type:document.getElementById('f-ctype').value,
       currency:document.getElementById('f-ccur').value,
-      amount:document.getElementById('f-camt').value,
+      amount:document.getElementById('f-camt').value.replace(/\./g,'').replace(',','.'),
       durationMonths:parseInt(document.getElementById('f-cdur').value)||24,
       startDate:document.getElementById('f-cstart').value,
       lastUpdate:document.getElementById('f-cupd').value,
@@ -1584,7 +1596,7 @@ function saveDepto(id){
     d.cochera={
       tiene:document.getElementById('f-coch-tiene').checked,
       numero:document.getElementById('f-coch-num')?.value.trim()||'',
-      precio:document.getElementById('f-coch-precio')?.value||'',
+      precio:document.getElementById('f-coch-precio')?.value.replace(/\./g,'').replace(',','.')||'',
     };
   } else if(t==='servicios'){
     getAllSvcs().forEach(s=>{
