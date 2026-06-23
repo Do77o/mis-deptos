@@ -931,8 +931,9 @@ function rPagosUnificado(){
                 <div style="font-size:13px;font-weight:500"><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</div>
                 <div class="gs-monto" style="margin-top:4px">
                   <span style="color:var(--tx2);font-size:12px">$</span>
-                  <input type="number" value="${reg.monto||''}" placeholder="0" style="width:90px;padding:4px 8px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1);text-align:right"
-                    onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
+                  <input type="text" inputmode="numeric" value="${reg.monto?Number(reg.monto).toLocaleString('es-AR'):''}" placeholder="0" style="width:90px;padding:4px 8px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rs);font-size:13px;color:var(--tx1);text-align:right"
+                    oninput="fmtMiles(this)"
+                    onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',parseMiles(this.value),${reg.pagado})">
                 </div>
               </div>
               <div style="display:flex;align-items:center;gap:6px">
@@ -998,10 +999,10 @@ async function openAjustarAlquiler(id){
       </div>
       <div class="fi">
         <label class="fl2">O nuevo monto directo (${cur})</label>
-        <input type="number" id="aj-monto" placeholder="${base}" min="0" oninput="calcAjusteDirecto('${id}')">
+        <input type="text" inputmode="numeric" id="aj-monto" placeholder="${base.toLocaleString('es-AR')}" oninput="fmtMiles(this);calcAjusteDirecto('${id}')">
       </div>
     </div>
-    ${coch?`<div class="fi"><label class="fl2">Nuevo monto cochera ($)</label><input type="number" id="aj-coch" placeholder="${coch}" min="0"></div>`:''}
+    ${coch?`<div class="fi"><label class="fl2">Nuevo monto cochera ($)</label><input type="text" inputmode="numeric" id="aj-coch" placeholder="${coch.toLocaleString('es-AR')}" oninput="fmtMiles(this)"></div>`:''}
     <div id="aj-preview" style="min-height:40px"></div>
     <button class="btn btn-p" style="width:100%;justify-content:center;margin-top:8px" onclick="aplicarAjuste('${id}')">
       <i class="ti ti-check"></i> Aplicar ajuste
@@ -1038,8 +1039,8 @@ function presetAjuste(id,pct,nuevoBase,nuevoCoch){
   const montoEl=document.getElementById('aj-monto');
   const cochEl=document.getElementById('aj-coch');
   if(pctEl) pctEl.value=pct;
-  if(montoEl) montoEl.value=nuevoBase;
-  if(cochEl) cochEl.value=nuevoCoch||'';
+  if(montoEl){montoEl.value=Number(nuevoBase).toLocaleString('es-AR');}
+  if(cochEl&&nuevoCoch){cochEl.value=Number(nuevoCoch).toLocaleString('es-AR');}
   const d=S.deptos.find(x=>x.id===id);
   if(d) showAjPreview(d,nuevoBase,nuevoCoch);
 }
@@ -1055,8 +1056,8 @@ function calcAjuste(id){
   const nuevoCoch=coch?Math.round(coch*(1+pct/100)):0;
   const montoEl=document.getElementById('aj-monto');
   const cochEl=document.getElementById('aj-coch');
-  if(montoEl) montoEl.value=nuevoBase;
-  if(cochEl&&nuevoCoch) cochEl.value=nuevoCoch;
+  if(montoEl) montoEl.value=Number(nuevoBase).toLocaleString('es-AR');
+  if(cochEl&&nuevoCoch) cochEl.value=Number(nuevoCoch).toLocaleString('es-AR');
   showAjPreview(d,nuevoBase,nuevoCoch);
 }
 
@@ -1448,8 +1449,9 @@ function renderDeptoModal(d){
             return`<tr>
               <td><span style="color:${svcColor(s.key)}">${s.emoji||'🔌'}</span> ${s.label}</td>
               <td><div class="gs-monto"><span style="color:var(--tx2);font-size:12px">$</span>
-                <input type="number" value="${reg.monto||''}" placeholder="0"
-                  onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',this.value,${reg.pagado})">
+                <input type="text" inputmode="numeric" value="${reg.monto?Number(reg.monto).toLocaleString('es-AR'):''}" placeholder="0"
+                  oninput="fmtMiles(this)"
+                  onblur="guardarSvcCosto('${d.id}','${tk}','${s.key}',parseMiles(this.value),${reg.pagado})">
               </div></td>
               <td><button class="gs-toggle ${reg.pagado?'pagado':''}" onclick="toggleSvcPago('${d.id}','${tk}','${s.key}')">
                 <i class="ti ${reg.pagado?'ti-check':'ti-clock'}"></i> ${reg.pagado?'Cobrado':'Pendiente'}
@@ -1554,9 +1556,9 @@ function fmtMiles(input){
   input.dataset.raw=raw;
 }
 function parseMiles(val){
-  // Strip dots and parse
   return Number((val||'').replace(/\./g,'').replace(',','.')||0);
 }
+function toggleCurFields(){
   const v=document.getElementById('f-ccur').value;
   document.getElementById('ars-fields').style.display=v==='usd'?'none':'';
   document.getElementById('usd-fields').style.display=v==='usd'?'':'none';
