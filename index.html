@@ -61,7 +61,7 @@ body{font-family:var(--font-sans,system-ui,sans-serif);background:var(--bg3);col
 .badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
 .bp{background:rgba(109,184,74,0.2);color:#8FD86A}.bu{background:rgba(224,107,107,0.2);color:#F08080}.bpa{background:rgba(212,148,74,0.2);color:#E0A870}.be{background:rgba(255,255,255,0.07);color:var(--tx2)}.bna{background:rgba(160,120,220,0.2);color:#C09AE8}
 .b-ars{background:rgba(74,158,224,0.2);color:#7BC0F0}.b-usd{background:rgba(109,184,74,0.2);color:#8FD86A}
-.b-largo{background:rgba(255,255,255,0.07);color:var(--tx2)}.b-corto{background:rgba(212,148,74,0.2);color:#E0A870}.b-local{background:rgba(74,158,224,0.2);color:#7BC0F0}
+.b-largo{background:rgba(255,255,255,0.07);color:var(--tx2)}.b-corto{background:rgba(212,148,74,0.2);color:#E0A870}.b-local{background:rgba(74,158,224,0.2);color:#7BC0F0}.b-largo-amoblado{background:rgba(160,112,212,0.2);color:#C09AE8}
 .fl{grid-column:1/-1;background:rgba(255,255,255,0.04);padding:7px 16px;font-size:12px;font-weight:500;color:var(--tx2);border-bottom:0.5px solid var(--bdr)}
 .sm{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
 .sd{width:7px;height:7px;border-radius:50%;display:inline-block}
@@ -744,7 +744,7 @@ function rFloorGrid(tk){
       h+=`<div class="dc" onclick="openDepto('${d.id}')">
         <div class="did">${d.group} · ${d.label}</div>
         <div class="dname">${d.tenant||'<span style="color:var(--tx2);font-weight:400;font-size:13px">Sin inquilino</span>'}</div>
-        <div class="dstat"><span class="badge ${bc}">${bt}</span>${d.contract&&d.contract.currency==='usd'?'<span class="badge b-usd">USD</span>':''}${d.contract&&d.contract.type&&st!=='na'?`<span class="badge b-${d.contract.type}">${{largo:'Largo',corto:'Corto',local:'Local'}[d.contract.type]||d.contract.type}</span>`:''}</div>
+        <div class="dstat"><span class="badge ${bc}">${bt}</span>${d.contract&&d.contract.currency==='usd'?'<span class="badge b-usd">USD</span>':''}${d.contract&&d.contract.type&&st!=='na'?`<span class="badge b-${d.contract.type}">${{largo:'Largo',corto:'Corto',local:'Local','largo-amoblado':'Largo amoblado'}[d.contract.type]||d.contract.type}</span>`:''}</div>
         <div class="sm">${dots}</div>
       </div>`;
     });
@@ -1358,7 +1358,7 @@ function renderDeptoModal(d){
     const c=d.contract||{};
     body+=`
     <div class="fg2">
-      <div class="fi"><label class="fl2">Tipo de contrato</label><select id="f-ctype"><option value="largo" ${c.type==='largo'?'selected':''}>Largo (sin amoblar)</option><option value="corto" ${c.type==='corto'?'selected':''}>Corto (amoblado)</option><option value="local" ${c.type==='local'?'selected':''}>Local comercial</option></select></div>
+      <div class="fi"><label class="fl2">Tipo de contrato</label><select id="f-ctype"><option value="largo" ${c.type==='largo'?'selected':''}>Largo (sin amoblar)</option><option value="largo-amoblado" ${c.type==='largo-amoblado'?'selected':''}>Largo amoblado</option><option value="corto" ${c.type==='corto'?'selected':''}>Corto (amoblado)</option><option value="local" ${c.type==='local'?'selected':''}>Local comercial</option></select></div>
       <div class="fi"><label class="fl2">Moneda</label><select id="f-ccur" onchange="toggleCurFields()"><option value="ars" ${c.currency!=='usd'?'selected':''}>Pesos (ARS)</option><option value="usd" ${c.currency==='usd'?'selected':''}>Dólares (USD)</option></select></div>
     </div>
     <div class="fg2">
