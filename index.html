@@ -612,16 +612,24 @@ async function fetchIPC(){
   if(S.ipcCache && S.ipcDate && (now-S.ipcDate)<3600000*6) return S.ipcCache;
   ipcLoading=true;
   try{
-    // INDEC API - serie IPC Nacional nivel general
-    const url='https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=3&sort=desc&format=json';
+    // Traemos 14 meses para poder calcular cualquier período hasta 12 meses
+    const url='https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=14&sort=desc&format=json';
     const r=await fetch(url);
     const j=await r.json();
     const datos=j.data;
     if(datos&&datos.length>=2){
-      const last=datos[0][1];
-      const prev=datos[1][1];
-      const pct=((last-prev)/prev*100);
-      S.ipcCache={pct:pct.toFixed(2),date:datos[0][0],index:last,prev:prev};
+      // datos viene ordenado desc: [0] = más reciente
+      const indices=datos.map(d=>({date:d[0],index:d[1]})).reverse(); // asc
+      const last=indices[indices.length-1];
+      const prev=indices[indices.length-2];
+      const pct=((last.index-prev.index)/prev.index*100);
+      S.ipcCache={
+        pct:pct.toFixed(2),
+        date:last.date,
+        index:last.index,
+        prev:prev.index,
+        indices:indices // array completo asc para cálculo por período
+      };
       S.ipcDate=now;
       save();
       return S.ipcCache;
@@ -629,6 +637,40 @@ async function fetchIPC(){
   }catch(e){}
   finally{ipcLoading=false;}
   return null;
+}
+
+// Calcula ratio IPC para un período en meses usando los índices disponibles.
+// Devuelve {ratio, pct, fechaBase, fechaCierre, mesesReales, advertencia}
+function calcIpcPeriodo(ipc, meses, indexCierreManual){
+  const indices=ipc.indices;
+  if(!indices||indices.length<2) return null;
+  const cierre=indexCierreManual||indices[indices.length-1].index;
+  const fechaCierre=indexCierreManual?'(manual)':indices[indices.length-1].date;
+  // Buscamos el índice base: retrocedemos `meses` posiciones desde el cierre
+  const baseIdx=indices.length-1-meses;
+  if(baseIdx<0){
+    // No tenemos suficientes meses — usamos el más antiguo disponible
+    const base=indices[0];
+    const mesesReales=indices.length-1;
+    const ratio=cierre/base.index;
+    const pct=((ratio-1)*100);
+    return {ratio,pct:pct.toFixed(2),fechaBase:base.date,fechaCierre,mesesReales,
+      advertencia:`Solo hay ${mesesReales} meses disponibles en la API (pediste ${meses}).`};
+  }
+  const base=indices[baseIdx];
+  const ratio=cierre/base.index;
+  const pct=((ratio-1)*100);
+  // Aviso si el índice de cierre es el último disponible y podría faltar el del mes en curso
+  const hoy=new Date();
+  const [ay,am]=indices[indices.length-1].date.split('-').map(Number);
+  const mesPublicado=new Date(ay,am-1,1);
+  const mesActual=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  let advertencia=null;
+  if(mesPublicado<mesActual){
+    const mesNombre=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    advertencia=`El índice de ${mesNombre[hoy.getMonth()]} aún no fue publicado (sale ~día 14). Se usó ${mesNombre[am-1]} como cierre.`;
+  }
+  return {ratio,pct:pct.toFixed(2),fechaBase:base.date,fechaCierre,mesesReales:meses,advertencia};
 }
 
 // ======= NAV =======
@@ -663,11 +705,15 @@ function getAlerts(){
       if(diff<=0) al.push({type:'ah',icon:'ti-alert-circle',title:`${dname} – Alquiler vencido`,desc:`${d.tenant} · Vencía día ${d.paymentDay}`});
       else if(diff<=5) al.push({type:'am2',icon:'ti-bell',title:`${dname} – Pago en ${diff} día${diff===1?'':'s'}`,desc:`${d.tenant} · Vence el día ${d.paymentDay}`});
     }
-    // IPC: si hay contrato en ARS y la última actualización fue hace 3+ meses
+    // IPC: alerta por próximo ajuste según período configurado
     if(d.contract&&d.contract.currency==='ars'&&d.contract.amount&&d.contract.lastUpdate){
+      const periodo=Number(d.contract.ipcPeriodo||3);
       const lu=new Date(d.contract.lastUpdate);
-      const mDiff=(now.getFullYear()-lu.getFullYear())*12+(now.getMonth()-lu.getMonth());
-      if(mDiff>=3) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Actualización IPC pendiente`,desc:`${d.tenant} · Última actualización: ${fDate(d.contract.lastUpdate)}`});
+      const proxAjuste=new Date(lu.getFullYear(),lu.getMonth()+periodo,lu.getDate());
+      const diffDias=Math.round((proxAjuste-now)/86400000);
+      if(diffDias<=0) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Actualización IPC pendiente`,desc:`${d.tenant} · Vencía ${fDate(proxAjuste.toISOString().slice(0,10))} · Período: ${periodo} meses`});
+      else if(diffDias<=15) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Ajuste IPC en ${diffDias} día${diffDias===1?'':'s'}`,desc:`${d.tenant} · Próximo ajuste: ${fDate(proxAjuste.toISOString().slice(0,10))} · Período: ${periodo} meses`});
+    }
     }
     // Promo internet por vencer
     const promoInt=d.promos?.internet;
@@ -980,16 +1026,37 @@ async function openAjustarAlquiler(id){
   const base=Number(c.amount||0);
   const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
   const cur=c.currency==='usd'?'USD':'$';
+  const periodoGuardado=Number(c.ipcPeriodo||3);
 
   document.getElementById('mtitle').textContent=`Ajustar alquiler — ${d.group} ${d.label}`;
   document.getElementById('mbody').innerHTML=`
     <div style="background:var(--bg1);border-radius:var(--rs);padding:12px 14px;margin-bottom:16px;font-size:13px">
       <div style="color:var(--tx2);margin-bottom:4px">Monto actual</div>
       <div style="font-size:18px;font-weight:500">${cur} ${base.toLocaleString('es-AR')}${coch?` <span style="font-size:13px;color:var(--tx2)">+ cochera $ ${coch.toLocaleString('es-AR')}</span>`:''}</div>
+      ${c.lastUpdate?`<div style="font-size:12px;color:var(--tx2);margin-top:4px">Último ajuste: ${fDate(c.lastUpdate)}</div>`:''}
+    </div>
+
+    <div class="st">Ajuste por IPC</div>
+    <div class="fg2" style="margin-bottom:10px">
+      <div class="fi">
+        <label class="fl2">Período</label>
+        <select id="aj-periodo" onchange="recalcIpc('${id}')">
+          <option value="1" ${periodoGuardado===1?'selected':''}>1 mes</option>
+          <option value="2" ${periodoGuardado===2?'selected':''}>2 meses</option>
+          <option value="3" ${periodoGuardado===3?'selected':''}>3 meses</option>
+          <option value="6" ${periodoGuardado===6?'selected':''}>6 meses</option>
+          <option value="12" ${periodoGuardado===12?'selected':''}>12 meses</option>
+        </select>
+      </div>
+      <div class="fi">
+        <label class="fl2">Índice cierre manual <span style="font-size:11px;color:var(--tx2)">(opcional)</span></label>
+        <input type="number" id="aj-idx-manual" placeholder="Ej: 10714.63" step="0.01" min="0" oninput="recalcIpc('${id}')">
+      </div>
     </div>
     <div class="ipc-loader" id="ipc-status"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Consultando IPC del INDEC...</div>
     <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
     <div id="ipc-result"></div>
+
     <hr style="border:none;border-top:0.5px solid var(--bdr);margin:16px 0">
     <div class="st">Ajuste manual</div>
     <div class="fg2" style="margin-bottom:12px">
@@ -1012,35 +1079,61 @@ async function openAjustarAlquiler(id){
 
   const ipc=await fetchIPC();
   const statusEl=document.getElementById('ipc-status');
-  const resultEl=document.getElementById('ipc-result');
   if(!statusEl)return;
   if(!ipc){
     statusEl.innerHTML=`<span style="color:var(--tx2);font-size:13px"><i class="ti ti-wifi-off"></i> No se pudo obtener el IPC automático.</span>`;
     return;
   }
-  const pct=parseFloat(ipc.pct);
-  const nuevoBase=Math.round(base*(1+pct/100));
-  const nuevoCoch=coch?Math.round(coch*(1+pct/100)):0;
   statusEl.innerHTML='';
+  renderIpcResult(id, ipc, periodoGuardado, null);
+}
+
+function renderIpcResult(id, ipc, meses, indexManual){
+  const d=S.deptos.find(x=>x.id===id);
+  if(!d)return;
+  const base=Number(d.contract?.amount||0);
+  const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
+  const cur=d.contract?.currency==='usd'?'USD':'$';
+  const res=calcIpcPeriodo(ipc, meses, indexManual);
+  if(!res)return;
+  const nuevoBase=Math.round(base*res.ratio);
+  const nuevoCoch=coch?Math.round(coch*res.ratio):0;
+  const mesNombre=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  function fMes(dateStr){ if(!dateStr||dateStr==='(manual)')return dateStr; const [y,m]=dateStr.split('-'); return `${mesNombre[parseInt(m)-1]} ${y}`; }
+  const resultEl=document.getElementById('ipc-result');
+  if(!resultEl)return;
   resultEl.innerHTML=`
     <div class="ipc-box">
-      <div style="font-size:12px;color:var(--suc)">IPC NACIONAL — ${ipc.date}</div>
-      <div class="ipc-val">+${ipc.pct}%</div>
-      <div class="ipc-sub">Fuente: INDEC · apis.datos.gob.ar</div>
+      <div style="font-size:12px;color:var(--suc)">IPC NACIONAL · ${fMes(res.fechaBase)} → ${fMes(res.fechaCierre)}${indexManual?' <span style="color:var(--tx2)">(cierre manual)</span>':''}</div>
+      <div class="ipc-val">+${res.pct}%</div>
+      <div class="ipc-sub">Fuente: INDEC · apis.datos.gob.ar · ${meses} mes${meses===1?'':'es'}</div>
+      ${res.advertencia?`<div style="margin-top:8px;font-size:12px;color:var(--war)"><i class="ti ti-info-circle"></i> ${res.advertencia}</div>`:''}
       <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div style="font-size:13px">${cur} ${base.toLocaleString('es-AR')} → <strong>${cur} ${nuevoBase.toLocaleString('es-AR')}</strong>${coch?' · cochera $'+coch.toLocaleString('es-AR')+' → <strong>$'+nuevoCoch.toLocaleString('es-AR')+'</strong>':''}</div>
-        <button class="btn btn-p btn-s" onclick="presetAjuste('${id}',${pct},${nuevoBase},${nuevoCoch})"><i class="ti ti-bolt"></i> Usar IPC</button>
+        <button class="btn btn-p btn-s" onclick="presetAjuste('${id}',${res.pct},${nuevoBase},${nuevoCoch},${meses})"><i class="ti ti-bolt"></i> Usar IPC</button>
       </div>
     </div>`;
 }
 
-function presetAjuste(id,pct,nuevoBase,nuevoCoch){
+async function recalcIpc(id){
+  const ipc=S.ipcCache;
+  if(!ipc)return;
+  const meses=parseInt(document.getElementById('aj-periodo')?.value||3);
+  const manualVal=parseFloat(document.getElementById('aj-idx-manual')?.value||'');
+  const indexManual=isNaN(manualVal)||manualVal<=0?null:manualVal;
+  renderIpcResult(id, ipc, meses, indexManual);
+}
+
+function presetAjuste(id,pct,nuevoBase,nuevoCoch,periodo){
   const pctEl=document.getElementById('aj-pct');
   const montoEl=document.getElementById('aj-monto');
   const cochEl=document.getElementById('aj-coch');
   if(pctEl) pctEl.value=pct;
   if(montoEl){montoEl.value=Number(nuevoBase).toLocaleString('es-AR');}
   if(cochEl&&nuevoCoch){cochEl.value=Number(nuevoCoch).toLocaleString('es-AR');}
+  // Guardar período seleccionado para aplicarAjuste
+  const perEl=document.getElementById('aj-periodo');
+  if(periodo&&perEl) perEl.value=periodo;
   const d=S.deptos.find(x=>x.id===id);
   if(d) showAjPreview(d,nuevoBase,nuevoCoch);
 }
@@ -1098,8 +1191,10 @@ function aplicarAjuste(id){
   if(!nuevoBase){alert('Ingresá el nuevo monto.');return;}
   const cochEl=document.getElementById('aj-coch');
   const nuevoCoch=cochEl?parseMiles(cochEl.value||String(d.cochera?.precio||0)):undefined;
+  const periodo=parseInt(document.getElementById('aj-periodo')?.value||3);
   d.contract.amount=nuevoBase;
   d.contract.lastUpdate=today();
+  d.contract.ipcPeriodo=periodo;
   if(d.cochera?.tiene&&nuevoCoch) d.cochera.precio=nuevoCoch;
   save();cm();render();updateBadge();
 }
