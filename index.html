@@ -605,38 +605,41 @@ function fDate(s){if(!s)return'-';const[y,m,d]=s.split('-');return`${d}/${m}/${y
 function today(){return new Date().toISOString().slice(0,10)}
 
 // ======= IPC =======
-let ipcLoading=false;
+let _ipcPromise=null;
 async function fetchIPC(){
-  if(ipcLoading)return;
   const now=Date.now();
-  if(S.ipcCache && S.ipcDate && (now-S.ipcDate)<3600000*6) return S.ipcCache;
-  ipcLoading=true;
-  try{
-    // Traemos 14 meses para poder calcular cualquier período hasta 12 meses
-    const url='https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=14&sort=desc&format=json';
-    const r=await fetch(url);
-    const j=await r.json();
-    const datos=j.data;
-    if(datos&&datos.length>=2){
-      // datos viene ordenado desc: [0] = más reciente
-      const indices=datos.map(d=>({date:d[0],index:d[1]})).reverse(); // asc
-      const last=indices[indices.length-1];
-      const prev=indices[indices.length-2];
-      const pct=((last.index-prev.index)/prev.index*100);
-      S.ipcCache={
-        pct:pct.toFixed(2),
-        date:last.date,
-        index:last.index,
-        prev:prev.index,
-        indices:indices // array completo asc para cálculo por período
-      };
-      S.ipcDate=now;
-      save();
-      return S.ipcCache;
-    }
-  }catch(e){}
-  finally{ipcLoading=false;}
-  return null;
+  // Si ya tenemos cache válido con indices, devolverlo
+  if(S.ipcCache&&S.ipcCache.indices&&S.ipcDate&&(now-S.ipcDate)<3600000*6) return S.ipcCache;
+  // Si ya hay un fetch en curso, esperar ese mismo (no lanzar otro)
+  if(_ipcPromise) return _ipcPromise;
+  _ipcPromise=(async()=>{
+    try{
+      const url='https://apis.datos.gob.ar/series/api/series/?ids=148.3_INIVELNAL_DICI_M_26&limit=14&sort=desc&format=json';
+      const r=await fetch(url);
+      const j=await r.json();
+      const datos=j.data;
+      if(datos&&datos.length>=2){
+        // datos viene desc: [0]=más reciente → revertimos a asc
+        const indices=datos.map(d=>({date:d[0],index:d[1]})).reverse();
+        const last=indices[indices.length-1];
+        const prev=indices[indices.length-2];
+        const pct=((last.index-prev.index)/prev.index*100);
+        S.ipcCache={
+          pct:pct.toFixed(2),
+          date:last.date,
+          index:last.index,
+          prev:prev.index,
+          indices:indices
+        };
+        S.ipcDate=now;
+        // No guardamos indices en Firebase para evitar problemas de serialización
+        return S.ipcCache;
+      }
+    }catch(e){console.warn('IPC fetch error:',e);}
+    finally{_ipcPromise=null;}
+    return null;
+  })();
+  return _ipcPromise;
 }
 
 // Calcula ratio IPC para un período en meses usando los índices disponibles.
@@ -1094,8 +1097,17 @@ function renderIpcResult(id, ipc, meses, indexManual){
   const base=Number(d.contract?.amount||0);
   const coch=d.cochera?.tiene?Number(d.cochera.precio||0):0;
   const cur=d.contract?.currency==='usd'?'USD':'$';
+  if(!ipc||!ipc.indices||ipc.indices.length<2){
+    const resultEl=document.getElementById('ipc-result');
+    if(resultEl) resultEl.innerHTML=`<span style="color:var(--tx2);font-size:13px"><i class="ti ti-wifi-off"></i> No se pudieron cargar los índices IPC.</span>`;
+    return;
+  }
   const res=calcIpcPeriodo(ipc, meses, indexManual);
-  if(!res)return;
+  if(!res){
+    const resultEl=document.getElementById('ipc-result');
+    if(resultEl) resultEl.innerHTML=`<span style="color:var(--tx2);font-size:13px">No hay suficientes datos para calcular el período seleccionado.</span>`;
+    return;
+  }
   const nuevoBase=Math.round(base*res.ratio);
   const nuevoCoch=coch?Math.round(coch*res.ratio):0;
   const mesNombre=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
