@@ -714,7 +714,6 @@ function getAlerts(){
       if(diffDias<=0) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Actualización IPC pendiente`,desc:`${d.tenant} · Vencía ${fDate(proxAjuste.toISOString().slice(0,10))} · Período: ${periodo} meses`});
       else if(diffDias<=15) al.push({type:'am2',icon:'ti-trending-up',title:`${dname} – Ajuste IPC en ${diffDias} día${diffDias===1?'':'s'}`,desc:`${d.tenant} · Próximo ajuste: ${fDate(proxAjuste.toISOString().slice(0,10))} · Período: ${periodo} meses`});
     }
-    }
     // Promo internet por vencer
     const promoInt=d.promos?.internet;
     if(promoInt?.vencimiento&&d.services['internet']){
