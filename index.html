@@ -655,6 +655,7 @@ function calcIpcPeriodo(ipc, meses, indexCierreManual){
     const ratio=cierre/base.index;
     const pct=((ratio-1)*100);
     return {ratio,pct:pct.toFixed(2),fechaBase:base.date,fechaCierre,mesesReales,
+      indiceBase:base.index,indiceCierre:cierre,
       advertencia:`Solo hay ${mesesReales} meses disponibles en la API (pediste ${meses}).`};
   }
   const base=indices[baseIdx];
@@ -670,7 +671,7 @@ function calcIpcPeriodo(ipc, meses, indexCierreManual){
     const mesNombre=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
     advertencia=`El índice de ${mesNombre[hoy.getMonth()]} aún no fue publicado (sale ~día 14). Se usó ${mesNombre[am-1]} como cierre.`;
   }
-  return {ratio,pct:pct.toFixed(2),fechaBase:base.date,fechaCierre,mesesReales:meses,advertencia};
+  return {ratio,pct:pct.toFixed(2),fechaBase:base.date,fechaCierre,mesesReales:meses,indiceBase:base.index,indiceCierre:cierre,advertencia};
 }
 
 // ======= NAV =======
@@ -1107,16 +1108,32 @@ function renderIpcResult(id, ipc, meses, indexManual){
       <div class="ipc-val">+${res.pct}%</div>
       <div class="ipc-sub">Fuente: INDEC · apis.datos.gob.ar · ${meses} mes${meses===1?'':'es'}</div>
       ${res.advertencia?`<div style="margin-top:8px;font-size:12px;color:var(--war)"><i class="ti ti-info-circle"></i> ${res.advertencia}</div>`:''}
-      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div style="font-size:13px">${cur} ${base.toLocaleString('es-AR')} → <strong>${cur} ${nuevoBase.toLocaleString('es-AR')}</strong>${coch?' · cochera $'+coch.toLocaleString('es-AR')+' → <strong>$'+nuevoCoch.toLocaleString('es-AR')+'</strong>':''}</div>
-        <button class="btn btn-p btn-s" onclick="presetAjuste('${id}',${res.pct},${nuevoBase},${nuevoCoch},${meses})"><i class="ti ti-bolt"></i> Usar IPC</button>
+      <div style="margin-top:10px;font-size:14px">
+        <div style="margin-bottom:6px">
+          <span style="color:var(--tx2)">Índice base (${fMes(res.fechaBase)}):</span> <strong>${res.indiceBase?.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+          &nbsp;→&nbsp;
+          <span style="color:var(--tx2)">Índice cierre (${fMes(res.fechaCierre)}):</span> <strong>${res.indiceCierre?.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+        </div>
+        <div>${cur} ${base.toLocaleString('es-AR')} → <strong style="font-size:16px">${cur} ${nuevoBase.toLocaleString('es-AR')}</strong>${coch?`&nbsp;·&nbsp;cochera $ ${coch.toLocaleString('es-AR')} → <strong>$ ${nuevoCoch.toLocaleString('es-AR')}</strong>`:''}</div>
       </div>
     </div>`;
+  // Precargar campos automáticamente
+  presetAjuste(id, res.pct, nuevoBase, nuevoCoch, meses);
 }
 
 async function recalcIpc(id){
-  const ipc=S.ipcCache;
-  if(!ipc)return;
+  let ipc=S.ipcCache;
+  // Si no hay cache aún, intentar fetchear
+  if(!ipc){
+    const statusEl=document.getElementById('ipc-status');
+    if(statusEl) statusEl.innerHTML=`<i class="ti ti-loader" style="animation:spin 1s linear infinite"></i> Consultando IPC del INDEC...`;
+    ipc=await fetchIPC();
+    if(!ipc){
+      if(statusEl) statusEl.innerHTML=`<span style="color:var(--tx2);font-size:13px"><i class="ti ti-wifi-off"></i> No se pudo obtener el IPC automático.</span>`;
+      return;
+    }
+    if(statusEl) statusEl.innerHTML='';
+  }
   const meses=parseInt(document.getElementById('aj-periodo')?.value||3);
   const manualVal=parseFloat(document.getElementById('aj-idx-manual')?.value||'');
   const indexManual=isNaN(manualVal)||manualVal<=0?null:manualVal;
